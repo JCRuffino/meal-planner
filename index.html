@@ -67,6 +67,7 @@ a{color:var(--moss)}
 }
 .tabs-inner{max-width:560px;margin:0 auto;display:flex;width:100%}
 .tab{
+  position:relative;
   flex:1;height:var(--tabh);display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:3px;
   font-family:"DM Mono",monospace;font-size:10.5px;letter-spacing:.08em;
@@ -75,7 +76,10 @@ a{color:var(--moss)}
 .tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tab[aria-current="page"]{color:var(--moss)}
 .tab[aria-current="page"] svg{stroke-width:2.1}
-.tab .dot{width:5px;height:5px;border-radius:50%;background:var(--ochre);position:absolute;margin:-26px 0 0 22px;opacity:0}
+.tab .dot{
+  position:absolute;top:14px;left:calc(50% + 10px);
+  width:6px;height:6px;border-radius:50%;background:var(--ochre);opacity:0;
+}
 .tab[data-count]:not([data-count="0"]) .dot{opacity:1}
 
 /* ---------- generic bits ---------- */
@@ -179,7 +183,7 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 .dmeal .name{font-weight:600;font-size:15.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dmeal .none{color:var(--muted);font-size:15px}
 .dmeal .sub{font-family:"DM Mono",monospace;font-size:11.5px;color:var(--muted);display:block;margin-top:2px}
-.dclear{flex:0 0 auto;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);border:1px solid var(--line)}
+.dclear{flex:0 0 auto;width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);border:1px solid var(--line)}
 
 /* ---------- shopping ---------- */
 .shead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
@@ -203,9 +207,13 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 .sheet{
   position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--paper);
   border-radius:18px 18px 0 0;max-width:560px;margin:0 auto;max-height:92dvh;
-  display:flex;flex-direction:column;transform:translateY(100%);transition:transform .22s cubic-bezier(.32,.72,0,1);
+  display:flex;flex-direction:column;transform:translateY(100%);
+  /* visibility, not just transform — otherwise the closed sheet stays in the
+     tab order and the screen-reader tree. It flips only once the slide-out ends. */
+  visibility:hidden;
+  transition:transform .22s cubic-bezier(.32,.72,0,1), visibility .22s;
 }
-.sheet.open{transform:translateY(0)}
+.sheet.open{transform:translateY(0);visibility:visible}
 .sheet-head{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:14px 16px 12px;border-bottom:1px solid var(--line);
@@ -320,7 +328,7 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
   <div class="grab"></div>
   <div class="sheet-head">
     <h2 id="sheetTitle">Recipe</h2>
-    <button id="sheetClose" class="btn btn-ghost" style="min-height:38px;padding:8px 14px">Close</button>
+    <button id="sheetClose" class="btn btn-ghost" style="padding:8px 14px">Close</button>
   </div>
   <div class="sheet-body" id="sheetBody"></div>
 </div>
@@ -368,6 +376,8 @@ let rolledUp = false;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* esc() stops a URL breaking out of the attribute but not a javascript: one */
+const safeUrl = u => /^https?:\/\//i.test(String(u ?? '').trim());
 
 function todayKey(){
   const d = new Date();
@@ -422,8 +432,13 @@ onAuthStateChanged(auth, user => {
     $('#whoName').textContent = (user.displayName || user.email || '').split(' ')[0];
     startListening(user);
   } else {
+    /* Detach first. Listeners left attached after sign-out lose their
+       credentials and fire permission-denied, which would drop the previous
+       user onto the "not on the list" screen instead of the sign-in one. */
+    stopListening();
     $('#app').classList.add('hidden');
     $('#gate').classList.remove('hidden');
+    $('#gateMsg').textContent = "Sign in to see your recipes and this week's plan.";
     $('#signInBtn').classList.remove('hidden');
     $('#gateExtra').classList.add('hidden');
   }
@@ -445,31 +460,49 @@ function denied(user){
 
 /* ---------- live data ---------- */
 let started = false;
+let unsubs = [];
+let recipesLoaded = false, planLoaded = false;
+
 function startListening(user){
   if (started) return; started = true;
   const onErr = e => { if (e.code === 'permission-denied') denied(user); else toast('Connection problem'); };
 
-  onSnapshot(recipesCol, snap => {
+  unsubs.push(onSnapshot(recipesCol, snap => {
     recipes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    render();
-  }, onErr);
-
-  onSnapshot(planCol, snap => {
-    plan = {};
-    snap.docs.forEach(d => { plan[d.id] = d.data(); });
+    recipesLoaded = true;
     rollOldDays();
     render();
-  }, onErr);
+  }, onErr));
 
-  onSnapshot(shopDoc, snap => {
+  unsubs.push(onSnapshot(planCol, snap => {
+    plan = {};
+    snap.docs.forEach(d => { plan[d.id] = d.data(); });
+    planLoaded = true;
+    rollOldDays();
+    render();
+  }, onErr));
+
+  unsubs.push(onSnapshot(shopDoc, snap => {
     shopping = snap.exists() ? snap.data() : null;
     render();
-  }, onErr);
+  }, onErr));
 }
 
-/* past planned dinners become "last cooked", then drop off the rail */
+function stopListening(){
+  unsubs.forEach(u => { try { u(); } catch(e){} });
+  unsubs = [];
+  started = false;
+  recipesLoaded = planLoaded = rolledUp = false;
+  recipes = []; plan = {}; shopping = null;
+}
+
+/* Past planned dinners become "last cooked", then drop off the rail.
+   Both listeners call this, but it waits for both: the recipe lookup below
+   needs the recipes to be in hand, and two independent onSnapshot calls have
+   no guaranteed order. Rolling early would delete the day without recording
+   the date it was meant to save. */
 async function rollOldDays(){
-  if (rolledUp) return;
+  if (rolledUp || !recipesLoaded || !planLoaded) return;
   const t = todayKey();
   const old = Object.keys(plan).filter(k => k < t);
   if (!old.length) return;
@@ -479,7 +512,10 @@ async function rollOldDays(){
     if (rid){
       const r = recipes.find(x => x.id === rid);
       if (r && (!r.lastCooked || r.lastCooked < k)){
-        try { await updateDoc(doc(recipesCol, rid), { lastCooked: k }); } catch(e){}
+        /* If the date fails to write, leave the day alone rather than
+           destroying it — next load gets another go. */
+        try { await updateDoc(doc(recipesCol, rid), { lastCooked: k }); }
+        catch(e){ continue; }
       }
     }
     try { await deleteDoc(doc(planCol, k)); } catch(e){}
@@ -532,10 +568,11 @@ function visibleRecipes(){
       (r.ingredients||'').toLowerCase().includes(searchTerm));
   }
   const num = v => Number(v) || 0;
+  const last = v => v > 0 ? v : 1e9;   // unpriced/untimed recipes sort to the bottom
   const cmp = {
-    cost:  (a,b) => perServing(a) - perServing(b),
+    cost:  (a,b) => last(perServing(a)) - last(perServing(b)),
     health:(a,b) => num(b.health) - num(a.health),
-    time:  (a,b) => (num(a.cookTime)||9999) - (num(b.cookTime)||9999),
+    time:  (a,b) => last(num(a.cookTime)) - last(num(b.cookTime)),
     eat:   (a,b) => num(b.rEat) - num(a.rEat),
     wash:  (a,b) => num(b.rWash) - num(a.rWash),
     name:  (a,b) => (a.name||'').localeCompare(b.name||''),
@@ -648,7 +685,7 @@ function renderShop(){
     <div class="shead">
       <div><h2>${esc(shopping.recipeName || 'Shopping list')}</h2>
         <span class="sprog">${left} of ${items.length} still to get</span></div>
-      <button class="btn btn-ghost" id="clearList" style="min-height:38px;padding:8px 13px">Clear</button>
+      <button class="btn btn-ghost" id="clearList" style="padding:8px 13px">Clear</button>
     </div>
     <ul class="slist">${items.map((it,i) =>
       `<li><button class="sitem" role="checkbox" aria-checked="${!!it.checked}" data-i="${i}">
@@ -664,34 +701,38 @@ function renderShop(){
 }
 
 /* ---------- recipe form (shared by add + edit) ---------- */
-function formHtml(r){
+/* Both copies can be in the document at once, so `p` keeps the ids unique —
+   otherwise <label for> resolves to whichever copy comes first and tapping a
+   label in the edit sheet focuses the hidden Add form. Everything else is
+   found by class, scoped to the form's own root. */
+function formHtml(r, p){
   const seg = (name, val) => `<div class="seg" data-seg="${name}">` +
     [1,2,3,4,5].map(n => `<button type="button" data-v="${n}" aria-pressed="${Number(val)===n}">${n}</button>`).join('') +
     `</div>`;
   return `
-  <div class="field"><label for="f-name">Recipe name</label>
-    <input id="f-name" class="input" value="${esc(r.name||'')}" placeholder="Chickpea and spinach curry"></div>
+  <div class="field"><label for="${p}-name">Recipe name</label>
+    <input id="${p}-name" class="input f-name" value="${esc(r.name||'')}" placeholder="Chickpea and spinach curry"></div>
 
-  <div class="field"><label for="f-url">Link to the recipe</label>
-    <input id="f-url" class="input" type="url" inputmode="url" value="${esc(r.url||'')}" placeholder="https://"></div>
+  <div class="field"><label for="${p}-url">Link to the recipe</label>
+    <input id="${p}-url" class="input f-url" type="url" inputmode="url" value="${esc(r.url||'')}" placeholder="https://"></div>
 
-  <div class="field"><label for="f-ing">Ingredients &mdash; one per line</label>
-    <textarea id="f-ing" class="input" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
+  <div class="field"><label for="${p}-ing">Ingredients &mdash; one per line</label>
+    <textarea id="${p}-ing" class="input f-ing" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
     <p class="hint">Paste the ingredient list straight from the page. Each line becomes a shopping list item.</p></div>
 
   <div class="row2">
-    <div class="field"><label for="f-cost">Whole recipe costs</label>
-      <input id="f-cost" class="input" type="number" inputmode="decimal" step="0.10" min="0" value="${esc(r.cost ?? '')}" placeholder="6.50"></div>
-    <div class="field"><label for="f-serv">Servings</label>
-      <input id="f-serv" class="input" type="number" inputmode="numeric" step="1" min="1" value="${esc(r.servings ?? '')}" placeholder="4"></div>
+    <div class="field"><label for="${p}-cost">Whole recipe costs</label>
+      <input id="${p}-cost" class="input f-cost" type="number" inputmode="decimal" step="0.10" min="0" value="${esc(r.cost ?? '')}" placeholder="6.50"></div>
+    <div class="field"><label for="${p}-serv">Servings</label>
+      <input id="${p}-serv" class="input f-serv" type="number" inputmode="numeric" step="1" min="1" value="${esc(r.servings ?? '')}" placeholder="4"></div>
   </div>
-  <p class="hint" id="perServeHint" style="margin:-6px 0 16px"></p>
+  <p class="hint f-perserve" style="margin:-6px 0 16px"></p>
 
-  <div class="field"><label for="f-time">Minutes to cook</label>
-    <input id="f-time" class="input" type="number" inputmode="numeric" step="5" min="0" value="${esc(r.cookTime ?? '')}" placeholder="35"></div>
+  <div class="field"><label for="${p}-time">Minutes to cook</label>
+    <input id="${p}-time" class="input f-time" type="number" inputmode="numeric" step="5" min="0" value="${esc(r.cookTime ?? '')}" placeholder="35"></div>
 
-  <div class="field"><label for="f-diet">Meat, vegetarian or vegan</label>
-    <select id="f-diet" class="input">
+  <div class="field"><label for="${p}-diet">Meat, vegetarian or vegan</label>
+    <select id="${p}-diet" class="input f-diet">
       <option value="">Not set</option>
       <option value="meat" ${r.diet==='meat'?'selected':''}>Meat</option>
       <option value="vegetarian" ${r.diet==='vegetarian'?'selected':''}>Vegetarian</option>
@@ -699,7 +740,7 @@ function formHtml(r){
     </select></div>
 
   <div class="field"><label>Favourite of</label>
-    <div class="chips" style="padding:0;margin:0;flex-wrap:wrap" id="favChips">
+    <div class="chips" style="padding:0;margin:0;flex-wrap:wrap">
       ${COOKS.map(c => `<button type="button" class="chip" data-fav="${c.key}" aria-pressed="${(r.favs||[]).includes(c.key)}">${esc(c.name)}</button>`).join('')}
     </div></div>
 
@@ -722,13 +763,13 @@ function wireForm(root, r){
     b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
   });
   const upd = () => {
-    const c = Number(root.querySelector('#f-cost').value) || 0;
-    const s = Number(root.querySelector('#f-serv').value) || 0;
-    root.querySelector('#perServeHint').textContent =
+    const c = Number(root.querySelector('.f-cost').value) || 0;
+    const s = Number(root.querySelector('.f-serv').value) || 0;
+    root.querySelector('.f-perserve').textContent =
       (c && s) ? `That's ${money(c/s)} a serving.` : '';
   };
-  root.querySelector('#f-cost').oninput = upd;
-  root.querySelector('#f-serv').oninput = upd;
+  root.querySelector('.f-cost').oninput = upd;
+  root.querySelector('.f-serv').oninput = upd;
   upd();
 }
 
@@ -737,14 +778,15 @@ function readForm(root){
     const b = root.querySelector(`[data-seg="${name}"] [aria-pressed="true"]`);
     return b ? Number(b.dataset.v) : null;
   };
+  const val = c => root.querySelector('.' + c).value;
   return {
-    name: root.querySelector('#f-name').value.trim(),
-    url: root.querySelector('#f-url').value.trim(),
-    ingredients: root.querySelector('#f-ing').value,
-    cost: root.querySelector('#f-cost').value === '' ? null : Number(root.querySelector('#f-cost').value),
-    servings: root.querySelector('#f-serv').value === '' ? null : Number(root.querySelector('#f-serv').value),
-    cookTime: root.querySelector('#f-time').value === '' ? null : Number(root.querySelector('#f-time').value),
-    diet: root.querySelector('#f-diet').value || null,
+    name: val('f-name').trim(),
+    url: val('f-url').trim(),
+    ingredients: val('f-ing'),
+    cost: val('f-cost') === '' ? null : Number(val('f-cost')),
+    servings: val('f-serv') === '' ? null : Number(val('f-serv')),
+    cookTime: val('f-time') === '' ? null : Number(val('f-time')),
+    diet: val('f-diet') || null,
     favs: [...root.querySelectorAll('[data-fav][aria-pressed="true"]')].map(b => b.dataset.fav),
     health: segVal('health'), rMake: segVal('rMake'),
     rEat: segVal('rEat'), rWash: segVal('rWash'),
@@ -756,12 +798,12 @@ function renderAddForm(){
   if (addFormBuilt) return;
   addFormBuilt = true;
   const host = $('#addFormHost');
-  host.innerHTML = formHtml({}) +
+  host.innerHTML = formHtml({}, 'add') +
     `<button class="btn btn-block" id="saveNew" style="margin-top:6px">Save recipe</button>`;
   wireForm(host, {});
   $('#saveNew').onclick = async () => {
     const data = readForm(host);
-    if (!data.name){ toast('Give it a name first'); host.querySelector('#f-name').focus(); return; }
+    if (!data.name){ toast('Give it a name first'); host.querySelector('.f-name').focus(); return; }
     await addDoc(recipesCol, {...data, lastCooked: null, createdAt: serverTimestamp()});
     host.innerHTML = ''; addFormBuilt = false; renderAddForm();
     toast('Recipe saved');
@@ -770,20 +812,39 @@ function renderAddForm(){
 }
 
 /* ---------- sheet ---------- */
+const FOCUSABLE = 'button, a[href], input, select, textarea';
+let lastFocus = null;
+
 function openSheet(title, html){
+  lastFocus = document.activeElement;
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = html;
   $('#sheet').classList.add('open');
   $('#sheetBg').classList.add('open');
   $('#sheetBody').scrollTop = 0;
+  ($('#sheetBody').querySelector(FOCUSABLE) || $('#sheetClose')).focus();
 }
 function closeSheet(){
+  if (!$('#sheet').classList.contains('open')) return;
   $('#sheet').classList.remove('open');
   $('#sheetBg').classList.remove('open');
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  lastFocus = null;
 }
 $('#sheetClose').onclick = closeSheet;
 $('#sheetBg').onclick = closeSheet;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* aria-modal="true" has to be true: keep Tab inside the open sheet */
+$('#sheet').addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const f = [...$('#sheet').querySelectorAll(FOCUSABLE)]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+});
 
 function openRecipe(id){
   const r = recipes.find(x => x.id === id);
@@ -793,8 +854,8 @@ function openRecipe(id){
       <button class="btn" id="mkList" style="flex:1">Make shopping list</button>
       <button class="btn btn-ghost" id="cookedNow">Cooked today</button>
     </div>
-    ${r.url ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open the original recipe</a></p>` : ''}
-    ${formHtml(r)}
+    ${safeUrl(r.url) ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open the original recipe</a></p>` : ''}
+    ${formHtml(r, 'edit')}
     <button class="btn btn-block" id="saveEdit">Save changes</button>
     <button class="btn btn-danger btn-block" id="delRecipe" style="margin-top:10px">Delete recipe</button>
     <p class="hint" style="text-align:center;margin-top:14px">${esc(agoLabel(r.lastCooked))}</p>
