@@ -4,10 +4,13 @@
 
 1. Download every file from the chat, keeping `icons/` and `.vscode/` as
    subfolders. Or unzip `meal-planner.zip` and skip this step.
-2. In VS Code: **File → Open Folder** and choose the `meal-planner` folder.
+2. In VS Code: **File → Open Folder** and choose the project folder — the one
+   with `index.html` directly inside it.
 3. VS Code will offer the recommended extensions — Live Server is the useful
    one. Accept it.
-4. `cp config.example.js config.js` and fill it in (see README step 2).
+4. `cp config.example.js config.js` and fill it in (see README step 2), then
+   commit it. It is not gitignored, on purpose: GitHub Pages only serves what
+   has been committed.
 5. Right-click `index.html` → **Open with Live Server**.
 
 Live Server matters: opening `index.html` by double-clicking gives you a
@@ -17,43 +20,52 @@ authorised domains list and you can develop without deploying.
 
 ## GitHub
 
+The repo is already initialised with commits on `main`, so this is just about
+getting it onto github.com.
+
+Make it **public**. GitHub Pages won't serve a private repo on a free plan, and
+nothing in here is dangerous once the rules are published — see the correction at
+the top of the README.
+
 **With the GitHub CLI** (`brew install gh` on Mac, `winget install GitHub.cli` on
 Windows):
 
 ```bash
-cd meal-planner
-git init
-git add .
-git commit -m "Meal Planner"
 gh auth login
-gh repo create meal-planner --private --source=. --push
+gh repo create meal-planner --public --source=. --push
 ```
 
 **Without it** — make an empty repo on github.com first, no README, then:
 
 ```bash
-cd meal-planner
-git init
-git add .
-git commit -m "Meal Planner"
-git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/meal-planner.git
 git push -u origin main
 ```
 
 **Or entirely inside VS Code** — open the Source Control panel in the left
-sidebar, click *Publish to GitHub*, sign in when prompted, and pick **private**.
+sidebar, click *Publish to GitHub*, sign in when prompted, and pick **public**.
 No terminal needed.
+
+## Turning on Pages
+
+In the repo on github.com: **Settings → Pages → Source: Deploy from a branch**,
+branch `main`, folder `/ (root)`. Save, wait a minute or two, and the site is at
+`https://<your-username>.github.io/meal-planner/`.
+
+Then add `<your-username>.github.io` to Firebase under **Authentication →
+Settings → Authorised domains**. The bare domain — no path, no repo name.
 
 ## Before that first push
 
 ```bash
-git status                        # config.js should NOT be listed
-git check-ignore -v config.js     # should print the .gitignore rule
+git status        # should be clean
+git ls-files      # config.js SHOULD be listed, once you've written it
 ```
 
-If `config.js` shows up in `git status`, stop and check `.gitignore` downloaded
-properly. Untangling a file from git history afterwards is a real nuisance.
+`config.js` needs to be in the repo or the deployed app has no Firebase details
+to connect with, and it will load to a gate telling you exactly that. This is the
+opposite of the usual advice about config files, and it's deliberate: the Firebase
+config is a project identifier rather than a password.
 
-Make the repo **private** either way. Nothing in it is dangerous if the rules are
-right, but there's no reason to publish your dinner habits.
+What must never be wrong is `firestore.rules`. Publish it with both real user IDs
+before you consider this done.

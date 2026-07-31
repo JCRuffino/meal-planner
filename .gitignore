@@ -1,4 +1,7 @@
-config.js
+# config.js is deliberately NOT ignored. GitHub Pages serves only what is
+# committed, so the app needs it in the repo to work at all. The Firebase config
+# is a project identifier rather than a password — see README. The security
+# rules are what protect the data.
 .firebase/
 .firebaserc
 node_modules/

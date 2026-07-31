@@ -1,5 +1,6 @@
 /* Copy this file to config.js and fill in your own values.
-   config.js is listed in .gitignore, so it never reaches GitHub. */
+   Commit config.js: GitHub Pages serves only what is in the repo, so the app
+   needs it there. The Firebase config is not a secret — see README. */
 
 window.APP_CONFIG = {
   // From Firebase console > Project settings > Your apps > Web app

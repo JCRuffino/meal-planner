@@ -20,9 +20,16 @@ servers where nobody can touch them. That is why `firestore.rules` restricts
 access to two specific user IDs. Even with your full config in hand, a stranger
 gets nothing.
 
-So `config.js` is gitignored here, but for tidiness rather than safety — it keeps
-your project name and your user IDs off a public repo. Don't mistake it for the
-thing keeping you safe. **If the rules aren't right, nothing else matters.**
+This is why `config.js` is **committed** to this repo rather than gitignored.
+GitHub Pages serves only what has been committed, so the app needs it there to
+work at all — and putting it there costs you nothing, because it was always
+going to be readable in the deployed page anyway.
+
+The same goes for the two user IDs in `firestore.rules`. A UID identifies an
+account; it isn't a password and won't let anyone sign in as you.
+
+**If the rules aren't right, nothing else matters.** That is the one step in this
+README worth being careful about.
 
 ---
 
@@ -49,15 +56,35 @@ Open `config.js`, paste in your Firebase values, and set the two names under
 leave them alone; the `name` values are what you see in the app and can change
 whenever.
 
-### 3. Put it online
+Then commit it — see *Pushing to GitHub* below. This is the step people miss:
+without `config.js` in the repo, the deployed app loads and tells you the config
+is missing.
 
-Either is fine. Netlify is quicker if you'd rather not install anything.
+### 3. Put it online with GitHub Pages
 
-**Netlify Drop** — go to `app.netlify.com/drop` and drag the whole project
-folder onto the page. You get a URL in about ten seconds. To update it later,
-drag the folder again.
+Push the repo first, then on github.com go to **Settings → Pages** and set
+**Source** to *Deploy from a branch*, branch `main`, folder `/ (root)`. Give it a
+minute or two and the site appears at:
 
-**Firebase Hosting** — needs Node installed:
+```
+https://<your-username>.github.io/<repo-name>/
+```
+
+Pages from a *private* repo needs a paid GitHub plan, so this route means a
+public repo. The correction at the top of this README explains why that's safe.
+
+Now go to **Authentication → Settings → Authorised domains** in Firebase and add
+`<your-username>.github.io` — the bare domain, with no path and no repo name.
+Sign-in fails without this.
+
+**If you'd rather not make the repo public,** Netlify Drop is free and needs
+nothing installed: go to `app.netlify.com/drop` and drag the whole project folder
+onto the page. Because you're dragging the folder rather than deploying the repo,
+`config.js` gets picked up whether or not it's committed, so the repo can stay
+private. Add the Netlify domain to the authorised domains list instead. To update
+the site later, drag the folder again.
+
+**Firebase Hosting** also works, and needs Node installed:
 
 ```bash
 npm install -g firebase-tools
@@ -65,10 +92,6 @@ firebase login
 firebase init hosting     # public directory: . (a dot) — single-page app: No
 firebase deploy
 ```
-
-Whichever you choose, go back to **Authentication → Settings → Authorised
-domains** in Firebase and add the domain you were given. Sign-in fails without
-this.
 
 ### 4. Lock down the rules
 
@@ -96,22 +119,30 @@ It then opens full screen with no browser chrome, like any other app.
 
 ## Pushing to GitHub
 
+The repo is already initialised with a commit, so you just need a remote:
+
 ```bash
-git init
-git add .
-git commit -m "Meal Planner"
-git branch -M main
-git remote add origin git@github.com:you/meal-planner.git
+git remote add origin https://github.com/YOUR_USERNAME/meal-planner.git
 git push -u origin main
 ```
 
-`.gitignore` already excludes `config.js`, so your project details and user IDs
-stay off GitHub while `config.example.js` shows the shape of what's needed.
+Make the repo **public** when you create it, or Pages won't serve it on a free
+plan. Then enable Pages as described in step 3.
 
-One thing to watch: if you commit `config.js` by accident, removing it in a
-later commit does **not** remove it from history. Rotating a Firebase config is
-awkward, so it's worth checking `git status` before that first push. Run
-`git check-ignore -v config.js` to confirm it's being skipped.
+After you've written `config.js`, commit it too — it's not gitignored, on purpose:
+
+```bash
+git add config.js
+git commit -m "Add Firebase config"
+git push
+```
+
+`git status` should come back clean afterwards. If `config.js` is missing from the
+repo, the deployed app will load to a gate saying so.
+
+Later on, if you ever change the Firebase project, remember that `config.js` is
+in the git history like any other file. That's fine — it's not a credential — but
+it does mean the old values stay visible in old commits.
 
 ---
 

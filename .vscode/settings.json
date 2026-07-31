@@ -3,6 +3,5 @@
   "editor.tabSize": 2,
   "editor.formatOnSave": false,
   "liveServer.settings.port": 5500,
-  "files.exclude": { "**/.firebase": true },
-  "search.exclude": { "config.js": true }
+  "files.exclude": { "**/.firebase": true }
 }
