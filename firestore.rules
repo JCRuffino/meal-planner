@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Only these two Google accounts can read or write anything.
+    // Replace the IDs below with your own (the app shows you yours on
+    // first sign-in). Keep the quotes and the commas.
+    function allowed() {
+      return request.auth != null && request.auth.uid in [
+        'PASTE_JOES_USER_ID',
+        'PASTE_IZZYS_USER_ID'
+      ];
+    }
+
+    match /spaces/{spaceId}/{document=**} {
+      allow read, write: if allowed();
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,5 @@
+config.js
+.firebase/
+.firebaserc
+node_modules/
+.DS_Store

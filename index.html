@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meal Planner</title>
+<meta name="theme-color" content="#2E4A3C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Meal Planner">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=DM+Mono:wght@400;500&family=Public+Sans:ital,wght@0,300..700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#16211C;
+  --paper:#E9EDE7;
+  --card:#FBFCF9;
+  --moss:#2E4A3C;
+  --moss-2:#3F6350;
+  --ochre:#C8892A;
+  --brick:#A6402E;
+  --leaf:#4C7A3F;
+  --muted:#6E8377;
+  --line:#CDD6CC;
+  --rail:#C3CFC4;
+  --shadow:0 1px 0 rgba(22,33,28,.06), 0 6px 18px -12px rgba(22,33,28,.35);
+  --tabh:64px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"Public Sans",system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none;padding:0}
+a{color:var(--moss)}
+
+/* ---------- shell ---------- */
+.wrap{max-width:560px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+.topbar{
+  position:sticky;top:0;z-index:30;background:var(--moss);color:#EAF0EA;
+  padding:calc(env(safe-area-inset-top) + 14px) 18px 12px;
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+}
+.topbar h1{
+  font-family:"Bricolage Grotesque",sans-serif;
+  font-weight:700;font-size:19px;letter-spacing:-.02em;margin:0;
+}
+.topbar .who{font-family:"DM Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.72}
+.topbar .who button{color:inherit;text-decoration:underline;text-underline-offset:3px;opacity:.9}
+.main{flex:1;padding:16px 14px calc(var(--tabh) + env(safe-area-inset-bottom) + 26px)}
+
+/* ---------- tabs ---------- */
+.tabs{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  background:var(--card);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+  display:flex;
+}
+.tabs-inner{max-width:560px;margin:0 auto;display:flex;width:100%}
+.tab{
+  flex:1;height:var(--tabh);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  font-family:"DM Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);
+}
+.tab svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tab[aria-current="page"]{color:var(--moss)}
+.tab[aria-current="page"] svg{stroke-width:2.1}
+.tab .dot{width:5px;height:5px;border-radius:50%;background:var(--ochre);position:absolute;margin:-26px 0 0 22px;opacity:0}
+.tab[data-count]:not([data-count="0"]) .dot{opacity:1}
+
+/* ---------- generic bits ---------- */
+.eyebrow{
+  font-family:"DM Mono",monospace;font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 10px;
+}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--moss);color:#F2F6F1;border-radius:10px;
+  padding:12px 16px;font-weight:600;font-size:15px;min-height:46px;
+}
+.btn:active{background:var(--moss-2)}
+.btn-ghost{background:transparent;color:var(--moss);border:1px solid var(--line)}
+.btn-ghost:active{background:#E1E7E0}
+.btn-danger{background:transparent;color:var(--brick);border:1px solid #E0C6C0}
+.btn-block{display:flex;width:100%}
+.field{margin-bottom:16px}
+.field label{display:block;font-family:"DM Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.input,textarea.input,select.input{
+  width:100%;background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:11px 12px;font-size:16px;
+}
+.input:focus,.chip:focus-visible,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--ochre);outline-offset:2px}
+textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM Mono",monospace;font-size:14px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.empty{text-align:center;padding:44px 22px;color:var(--muted)}
+.empty h3{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;color:var(--ink);margin:0 0 6px}
+.empty p{margin:0 0 16px;font-size:14.5px}
+
+/* segmented 1-5 */
+.seg{display:flex;gap:6px}
+.seg button{
+  flex:1;min-height:44px;border:1px solid var(--line);border-radius:9px;background:var(--card);
+  font-family:"DM Mono",monospace;font-size:14px;color:var(--muted);
+}
+.seg button[aria-pressed="true"]{background:var(--moss);border-color:var(--moss);color:#F2F6F1}
+
+/* chips */
+.chips{display:flex;gap:7px;overflow-x:auto;padding:2px 14px 12px;margin:0 -14px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{
+  flex:0 0 auto;border:1px solid var(--line);background:var(--card);border-radius:999px;
+  padding:7px 13px;font-size:13.5px;white-space:nowrap;color:var(--muted);
+}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#EDF1EC}
+
+/* diet tag */
+.tag{
+  font-family:"DM Mono",monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  padding:3px 7px;border-radius:5px;border:1px solid;
+}
+.tag.meat{color:var(--brick);border-color:#E2C7C1;background:#F8EFEC}
+.tag.vegetarian{color:var(--moss);border-color:#C6D6C8;background:#EDF3EC}
+.tag.vegan{color:var(--leaf);border-color:#C8DCBE;background:#EFF5EA}
+.fav{font-family:"DM Mono",monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ochre);border:1px solid #E6D2AE;background:#FAF3E5;padding:3px 7px;border-radius:5px}
+
+/* ---------- recipe list ---------- */
+.rlist{display:flex;flex-direction:column;gap:10px;margin-top:2px}
+.ritem{
+  display:block;width:100%;text-align:left;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow);
+}
+.ritem:active{background:#F3F6F2}
+.ritem h3{
+  font-family:"Bricolage Grotesque",sans-serif;font-weight:600;font-size:17px;
+  letter-spacing:-.015em;margin:0 0 7px;line-height:1.25;
+}
+.rtags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.rdata{
+  display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;
+  font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);
+  border-top:1px dashed var(--line);padding-top:8px;
+}
+.rdata b{color:var(--ink);font-weight:500}
+.rdata .sep{color:var(--rail)}
+
+/* ---------- planner rail ---------- */
+.rail{position:relative;margin:4px 0 0;padding-left:34px}
+.rail::before{content:"";position:absolute;left:9px;top:12px;bottom:12px;width:2px;background:var(--rail);border-radius:2px}
+.day{position:relative;margin-bottom:9px}
+.day::before{
+  content:"";position:absolute;left:-30px;top:19px;width:12px;height:12px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--rail);
+}
+.day.today::before{background:var(--ochre);border-color:var(--ochre)}
+.daybtn{
+  display:flex;width:100%;text-align:left;align-items:center;gap:12px;
+  background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;min-height:60px;box-shadow:var(--shadow);
+}
+.day.today .daybtn{border-color:var(--ochre)}
+.daybtn:active{background:#F3F6F2}
+.dstamp{flex:0 0 46px}
+.dstamp .dow{font-family:"DM Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);display:block}
+.dstamp .num{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;font-weight:600;line-height:1.05;display:block}
+.day.today .dstamp .num{color:var(--ochre)}
+.dmeal{flex:1;min-width:0}
+.dmeal .name{font-weight:600;font-size:15.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dmeal .none{color:var(--muted);font-size:15px}
+.dmeal .sub{font-family:"DM Mono",monospace;font-size:11.5px;color:var(--muted);display:block;margin-top:2px}
+.dclear{flex:0 0 auto;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);border:1px solid var(--line)}
+
+/* ---------- shopping ---------- */
+.shead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.shead h2{font-family:"Bricolage Grotesque",sans-serif;font-size:21px;letter-spacing:-.02em;margin:0 0 3px}
+.slist{list-style:none;margin:0;padding:0}
+.sitem{display:flex;align-items:flex-start;gap:12px;padding:13px 4px;border-bottom:1px solid var(--line);width:100%;text-align:left}
+.sbox{
+  flex:0 0 22px;height:22px;margin-top:1px;border:2px solid var(--moss);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+}
+.sitem[aria-checked="true"] .sbox{background:var(--moss)}
+.sbox svg{width:14px;height:14px;stroke:#F2F6F1;stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.sitem[aria-checked="true"] .sbox svg{opacity:1}
+.sitem[aria-checked="true"] .stext{color:var(--muted);text-decoration:line-through}
+.stext{font-size:15.5px;line-height:1.35}
+.sprog{font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+
+/* ---------- sheet ---------- */
+.sheet-bg{position:fixed;inset:0;background:rgba(22,33,28,.42);z-index:60;opacity:0;pointer-events:none;transition:opacity .18s ease}
+.sheet-bg.open{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--paper);
+  border-radius:18px 18px 0 0;max-width:560px;margin:0 auto;max-height:92dvh;
+  display:flex;flex-direction:column;transform:translateY(100%);transition:transform .22s cubic-bezier(.32,.72,0,1);
+}
+.sheet.open{transform:translateY(0)}
+.sheet-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 16px 12px;border-bottom:1px solid var(--line);
+}
+.sheet-head h2{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;letter-spacing:-.02em;margin:0}
+.sheet-body{overflow-y:auto;padding:16px 16px calc(env(safe-area-inset-bottom) + 22px);-webkit-overflow-scrolling:touch}
+.grab{width:38px;height:4px;border-radius:4px;background:var(--rail);margin:8px auto 0}
+.pickitem{display:flex;width:100%;text-align:left;gap:10px;align-items:center;padding:13px 6px;border-bottom:1px solid var(--line)}
+.pickitem .nm{flex:1;font-weight:600;font-size:15.5px}
+.pickitem .mt{font-family:"DM Mono",monospace;font-size:11.5px;color:var(--muted)}
+
+/* ---------- gate ---------- */
+.gate{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 24px;text-align:center;gap:6px}
+.gate .mark{width:72px;height:72px;border-radius:20px;background:var(--moss);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.gate .mark svg{width:38px;height:38px;stroke:var(--ochre);fill:none;stroke-width:1.8;stroke-linecap:round}
+.gate h1{font-family:"Bricolage Grotesque",sans-serif;font-size:27px;letter-spacing:-.03em;margin:0}
+.gate p{color:var(--muted);max-width:32ch;margin:2px 0 20px;font-size:15px}
+.uidbox{
+  font-family:"DM Mono",monospace;font-size:12.5px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:11px 12px;word-break:break-all;margin:14px 0 10px;max-width:100%;
+}
+.toast{
+  position:fixed;left:50%;bottom:calc(var(--tabh) + env(safe-area-inset-bottom) + 18px);
+  transform:translate(-50%,14px);background:var(--ink);color:#EDF1EC;
+  padding:11px 17px;border-radius:10px;font-size:14px;z-index:80;
+  opacity:0;pointer-events:none;transition:all .2s ease;max-width:88vw;text-align:center;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.hidden{display:none !important}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+</style>
+</head>
+<body>
+
+<!-- sign-in gate -->
+<div id="gate" class="gate">
+  <div class="mark">
+    <svg viewBox="0 0 24 24"><path d="M3 11h18M5 11a7 7 0 0 1 14 0M4 15h16M7 19h10"/></svg>
+  </div>
+  <h1>Meal Planner</h1>
+  <p id="gateMsg">Sign in to see your recipes and this week's plan.</p>
+  <button id="signInBtn" class="btn">Sign in with Google</button>
+  <div id="gateExtra" class="hidden"></div>
+</div>
+
+<!-- app -->
+<div id="app" class="wrap hidden">
+  <header class="topbar">
+    <h1 id="viewTitle">Recipes</h1>
+    <span class="who"><span id="whoName"></span> · <button id="signOutBtn">Sign out</button></span>
+  </header>
+
+  <main class="main">
+    <!-- RECIPES -->
+    <section id="view-recipes">
+      <div class="chips" id="filterChips"></div>
+      <div class="field" style="margin-bottom:12px">
+        <input id="search" class="input" type="search" placeholder="Search name or ingredient" autocomplete="off">
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <select id="sortBy" class="input">
+          <option value="cost">Sort by cost per serving</option>
+          <option value="health">Sort by healthiest</option>
+          <option value="time">Sort by quickest</option>
+          <option value="stale">Sort by not had in a while</option>
+          <option value="eat">Sort by best to eat</option>
+          <option value="wash">Sort by least washing up</option>
+          <option value="name">Sort by name</option>
+        </select>
+      </div>
+      <div id="recipeList" class="rlist"></div>
+    </section>
+
+    <!-- PLAN -->
+    <section id="view-plan" class="hidden">
+      <p class="eyebrow" id="planCount">Next 10 days</p>
+      <div class="rail" id="rail"></div>
+    </section>
+
+    <!-- SHOP -->
+    <section id="view-shop" class="hidden">
+      <div id="shopContent"></div>
+    </section>
+
+    <!-- ADD -->
+    <section id="view-add" class="hidden">
+      <p class="eyebrow">New recipe</p>
+      <div id="addFormHost"></div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <div class="tabs-inner">
+      <button class="tab" data-view="recipes" aria-current="page">
+        <svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5zM8 8h7M8 12h7"/></svg>Recipes
+      </button>
+      <button class="tab" data-view="plan">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3.5v3M16 3.5v3"/></svg>Plan
+      </button>
+      <button class="tab" data-view="shop"><span class="dot"></span>
+        <svg viewBox="0 0 24 24"><path d="M4 6h2l2.2 10.2a1.6 1.6 0 0 0 1.6 1.3h7.5a1.6 1.6 0 0 0 1.6-1.2L20.5 9H6.4"/><circle cx="10" cy="20" r="1"/><circle cx="17.5" cy="20" r="1"/></svg>Shop
+      </button>
+      <button class="tab" data-view="add">
+        <svg viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></svg>Add
+      </button>
+    </div>
+  </nav>
+</div>
+
+<div id="sheetBg" class="sheet-bg"></div>
+<div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="grab"></div>
+  <div class="sheet-head">
+    <h2 id="sheetTitle">Recipe</h2>
+    <button id="sheetClose" class="btn btn-ghost" style="min-height:38px;padding:8px 14px">Close</button>
+  </div>
+  <div class="sheet-body" id="sheetBody"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+         onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+         onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+/* ---------- config ---------- */
+const CFG = window.APP_CONFIG;
+if (!CFG || !CFG.firebase) {
+  document.getElementById('gateMsg').textContent =
+    'config.js is missing. Copy config.example.js to config.js and add your Firebase details.';
+  document.getElementById('signInBtn').classList.add('hidden');
+  throw new Error('missing config');
+}
+const COOKS = CFG.cooks || [{key:'a',name:'A'},{key:'b',name:'B'}];
+const SPACE = CFG.spaceId || 'home';
+
+const app = initializeApp(CFG.firebase);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const recipesCol = collection(db, 'spaces', SPACE, 'recipes');
+const planCol    = collection(db, 'spaces', SPACE, 'plan');
+const shopDoc    = doc(db, 'spaces', SPACE, 'meta', 'shopping');
+
+/* ---------- state ---------- */
+let recipes = [];            // {id, ...}
+let plan = {};               // 'YYYY-MM-DD' -> {recipeId}
+let shopping = null;         // {recipeName, items:[{text,checked}]}
+let view = 'recipes';
+let filter = 'all';
+let searchTerm = '';
+let sortBy = 'cost';
+let rolledUp = false;
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function todayKey(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function keyFor(offset){
+  const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+offset);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function parseKey(k){ const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d,12,0,0,0); }
+function daysBetween(a,b){ return Math.round((b-a)/86400000); }
+
+function agoLabel(key){
+  if(!key) return 'Never cooked';
+  const n = daysBetween(parseKey(key), parseKey(todayKey()));
+  if(n < 0) return 'Planned';
+  if(n === 0) return 'Cooked today';
+  if(n === 1) return 'Cooked yesterday';
+  if(n < 14) return `${n} days ago`;
+  if(n < 60) return `${Math.round(n/7)} weeks ago`;
+  return `${Math.round(n/30)} months ago`;
+}
+function perServing(r){
+  const c = Number(r.cost)||0, s = Number(r.servings)||0;
+  return s > 0 ? c/s : 0;
+}
+function money(n){ return '£' + (Math.round(n*100)/100).toFixed(2); }
+
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- auth ---------- */
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
+
+$('#signInBtn').addEventListener('click', async () => {
+  try { await signInWithPopup(auth, provider); }
+  catch (e) {
+    if (String(e.code).includes('popup')) { await signInWithRedirect(auth, provider); }
+    else { $('#gateMsg').textContent = 'Sign-in failed: ' + (e.code || e.message); }
+  }
+});
+$('#signOutBtn').addEventListener('click', () => signOut(auth));
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    $('#gate').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    $('#whoName').textContent = (user.displayName || user.email || '').split(' ')[0];
+    startListening(user);
+  } else {
+    $('#app').classList.add('hidden');
+    $('#gate').classList.remove('hidden');
+    $('#signInBtn').classList.remove('hidden');
+    $('#gateExtra').classList.add('hidden');
+  }
+});
+
+function denied(user){
+  $('#app').classList.add('hidden');
+  $('#gate').classList.remove('hidden');
+  $('#signInBtn').classList.add('hidden');
+  $('#gateMsg').textContent = 'This account is not on the list yet. Add the ID below to your Firestore rules, publish them, then reload.';
+  const extra = $('#gateExtra');
+  extra.classList.remove('hidden');
+  extra.innerHTML = `<div class="uidbox">${esc(user.uid)}</div>
+    <button class="btn btn-ghost" id="copyUid">Copy ID</button>
+    <button class="btn btn-ghost" id="outBtn" style="margin-left:8px">Sign out</button>`;
+  $('#copyUid').onclick = () => { navigator.clipboard?.writeText(user.uid); toast('ID copied'); };
+  $('#outBtn').onclick = () => signOut(auth);
+}
+
+/* ---------- live data ---------- */
+let started = false;
+function startListening(user){
+  if (started) return; started = true;
+  const onErr = e => { if (e.code === 'permission-denied') denied(user); else toast('Connection problem'); };
+
+  onSnapshot(recipesCol, snap => {
+    recipes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    render();
+  }, onErr);
+
+  onSnapshot(planCol, snap => {
+    plan = {};
+    snap.docs.forEach(d => { plan[d.id] = d.data(); });
+    rollOldDays();
+    render();
+  }, onErr);
+
+  onSnapshot(shopDoc, snap => {
+    shopping = snap.exists() ? snap.data() : null;
+    render();
+  }, onErr);
+}
+
+/* past planned dinners become "last cooked", then drop off the rail */
+async function rollOldDays(){
+  if (rolledUp) return;
+  const t = todayKey();
+  const old = Object.keys(plan).filter(k => k < t);
+  if (!old.length) return;
+  rolledUp = true;
+  for (const k of old){
+    const rid = plan[k]?.recipeId;
+    if (rid){
+      const r = recipes.find(x => x.id === rid);
+      if (r && (!r.lastCooked || r.lastCooked < k)){
+        try { await updateDoc(doc(recipesCol, rid), { lastCooked: k }); } catch(e){}
+      }
+    }
+    try { await deleteDoc(doc(planCol, k)); } catch(e){}
+  }
+}
+
+/* ---------- navigation ---------- */
+const TITLES = { recipes:'Recipes', plan:'Next 10 days', shop:'Shopping list', add:'Add a recipe' };
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    view = btn.dataset.view;
+    document.querySelectorAll('.tab').forEach(b =>
+      b.setAttribute('aria-current', b === btn ? 'page' : 'false'));
+    ['recipes','plan','shop','add'].forEach(v =>
+      $('#view-'+v).classList.toggle('hidden', v !== view));
+    $('#viewTitle').textContent = TITLES[view];
+    window.scrollTo(0,0);
+    render();
+  });
+});
+
+/* ---------- filters ---------- */
+function buildChips(){
+  const opts = [
+    {k:'all', label:'All'},
+    ...COOKS.map(c => ({k:'fav:'+c.key, label:c.name + "'s favourites"})),
+    {k:'vegetarian', label:'Vegetarian'},
+    {k:'vegan', label:'Vegan'},
+    {k:'meat', label:'Meat'},
+  ];
+  $('#filterChips').innerHTML = opts.map(o =>
+    `<button class="chip" data-k="${o.k}" aria-pressed="${filter===o.k}">${esc(o.label)}</button>`).join('');
+  $('#filterChips').querySelectorAll('.chip').forEach(c =>
+    c.onclick = () => { filter = c.dataset.k; buildChips(); renderRecipes(); });
+}
+$('#search').addEventListener('input', e => { searchTerm = e.target.value.toLowerCase().trim(); renderRecipes(); });
+$('#sortBy').addEventListener('change', e => { sortBy = e.target.value; renderRecipes(); });
+
+function visibleRecipes(){
+  let list = recipes.slice();
+  if (filter.startsWith('fav:')){
+    const k = filter.slice(4);
+    list = list.filter(r => (r.favs||[]).includes(k));
+  } else if (filter !== 'all'){
+    list = list.filter(r => r.diet === filter);
+  }
+  if (searchTerm){
+    list = list.filter(r =>
+      (r.name||'').toLowerCase().includes(searchTerm) ||
+      (r.ingredients||'').toLowerCase().includes(searchTerm));
+  }
+  const num = v => Number(v) || 0;
+  const cmp = {
+    cost:  (a,b) => perServing(a) - perServing(b),
+    health:(a,b) => num(b.health) - num(a.health),
+    time:  (a,b) => (num(a.cookTime)||9999) - (num(b.cookTime)||9999),
+    eat:   (a,b) => num(b.rEat) - num(a.rEat),
+    wash:  (a,b) => num(b.rWash) - num(a.rWash),
+    name:  (a,b) => (a.name||'').localeCompare(b.name||''),
+    stale: (a,b) => (a.lastCooked||'0000-00-00').localeCompare(b.lastCooked||'0000-00-00'),
+  }[sortBy];
+  return list.sort(cmp);
+}
+
+/* ---------- render ---------- */
+function render(){
+  if (view === 'recipes') renderRecipes();
+  if (view === 'plan') renderPlan();
+  if (view === 'shop') renderShop();
+  if (view === 'add') renderAddForm();
+  const left = shopping ? (shopping.items||[]).filter(i => !i.checked).length : 0;
+  document.querySelector('.tab[data-view="shop"]').dataset.count = left;
+}
+
+function tagsHtml(r){
+  const out = [];
+  if (r.diet) out.push(`<span class="tag ${esc(r.diet)}">${r.diet==='vegetarian'?'Veg':esc(r.diet)}</span>`);
+  (r.favs||[]).forEach(k => {
+    const c = COOKS.find(x => x.key === k);
+    if (c) out.push(`<span class="fav">${esc(c.name)}&rsquo;s pick</span>`);
+  });
+  return out.join('');
+}
+
+function renderRecipes(){
+  buildChips();
+  const list = visibleRecipes();
+  const host = $('#recipeList');
+  if (!recipes.length){
+    host.innerHTML = `<div class="empty"><h3>No recipes yet</h3>
+      <p>Add the first one and it'll show up on both your phones.</p>
+      <button class="btn" onclick="document.querySelector('.tab[data-view=add]').click()">Add a recipe</button></div>`;
+    return;
+  }
+  if (!list.length){
+    host.innerHTML = `<div class="empty"><h3>Nothing matches</h3><p>Try a different filter or search.</p></div>`;
+    return;
+  }
+  host.innerHTML = list.map(r => {
+    const bits = [];
+    if (perServing(r)) bits.push(`<span><b>${money(perServing(r))}</b> a serving</span>`);
+    if (Number(r.cookTime)) bits.push(`<span><b>${Number(r.cookTime)}</b> min</span>`);
+    if (Number(r.health)) bits.push(`<span>health <b>${Number(r.health)}</b>/5</span>`);
+    bits.push(`<span>${esc(agoLabel(r.lastCooked))}</span>`);
+    return `<button class="ritem" data-id="${r.id}">
+      <h3>${esc(r.name || 'Untitled')}</h3>
+      ${tagsHtml(r) ? `<div class="rtags">${tagsHtml(r)}</div>` : ''}
+      <div class="rdata">${bits.join('<span class="sep">·</span>')}</div>
+    </button>`;
+  }).join('');
+  host.querySelectorAll('.ritem').forEach(el =>
+    el.onclick = () => openRecipe(el.dataset.id));
+}
+
+function renderPlan(){
+  const planned = Object.keys(plan).length;
+  $('#planCount').textContent = planned
+    ? `${planned} of the next 10 dinners planned`
+    : 'Ten days ahead, dinners only';
+  const t = todayKey();
+  let html = '';
+  for (let i = 0; i < 10; i++){
+    const k = keyFor(i);
+    const d = parseKey(k);
+    const rid = plan[k]?.recipeId;
+    const r = rid ? recipes.find(x => x.id === rid) : null;
+    const dow = i===0 ? 'Today' : i===1 ? 'Tmrw' : d.toLocaleDateString('en-GB',{weekday:'short'});
+    let meal;
+    if (r){
+      const sub = [];
+      if (perServing(r)) sub.push(money(perServing(r)) + ' a serving');
+      if (Number(r.cookTime)) sub.push(Number(r.cookTime) + ' min');
+      meal = `<span class="name">${esc(r.name)}</span>${sub.length?`<span class="sub">${esc(sub.join(' · '))}</span>`:''}`;
+    } else if (rid){
+      meal = `<span class="none">Recipe was deleted &mdash; tap to change</span>`;
+    } else {
+      meal = `<span class="none">Nothing planned</span>`;
+    }
+    html += `<div class="day${k===t?' today':''}">
+      <div class="daybtn" role="group">
+        <button class="dstamp" data-pick="${k}" aria-label="Choose dinner for ${d.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'})}" style="text-align:left">
+          <span class="dow">${esc(dow)}</span><span class="num">${d.getDate()}</span>
+        </button>
+        <button class="dmeal" data-pick="${k}" style="text-align:left">${meal}</button>
+        ${rid ? `<button class="dclear" data-clear="${k}" aria-label="Clear this day">&times;</button>` : ''}
+      </div></div>`;
+  }
+  $('#rail').innerHTML = html;
+  $('#rail').querySelectorAll('[data-pick]').forEach(el =>
+    el.onclick = () => openPicker(el.dataset.pick));
+  $('#rail').querySelectorAll('[data-clear]').forEach(el =>
+    el.onclick = async () => { await deleteDoc(doc(planCol, el.dataset.clear)); toast('Day cleared'); });
+}
+
+function renderShop(){
+  const host = $('#shopContent');
+  if (!shopping || !(shopping.items||[]).length){
+    host.innerHTML = `<div class="empty"><h3>No list right now</h3>
+      <p>Open a recipe and choose <em>Make shopping list</em>. It appears on both your phones.</p>
+      <button class="btn" onclick="document.querySelector('.tab[data-view=recipes]').click()">Pick a recipe</button></div>`;
+    return;
+  }
+  const items = shopping.items;
+  const left = items.filter(i => !i.checked).length;
+  host.innerHTML = `
+    <div class="shead">
+      <div><h2>${esc(shopping.recipeName || 'Shopping list')}</h2>
+        <span class="sprog">${left} of ${items.length} still to get</span></div>
+      <button class="btn btn-ghost" id="clearList" style="min-height:38px;padding:8px 13px">Clear</button>
+    </div>
+    <ul class="slist">${items.map((it,i) =>
+      `<li><button class="sitem" role="checkbox" aria-checked="${!!it.checked}" data-i="${i}">
+        <span class="sbox"><svg viewBox="0 0 24 24"><path d="M5 13l4.5 4.5L19 7"/></svg></span>
+        <span class="stext">${esc(it.text)}</span></button></li>`).join('')}
+    </ul>`;
+  host.querySelectorAll('.sitem').forEach(el => el.onclick = async () => {
+    const i = Number(el.dataset.i);
+    const next = shopping.items.map((it,ix) => ix===i ? {...it, checked: !it.checked} : it);
+    await setDoc(shopDoc, {...shopping, items: next});
+  });
+  $('#clearList').onclick = async () => { await deleteDoc(shopDoc); toast('List cleared'); };
+}
+
+/* ---------- recipe form (shared by add + edit) ---------- */
+function formHtml(r){
+  const seg = (name, val) => `<div class="seg" data-seg="${name}">` +
+    [1,2,3,4,5].map(n => `<button type="button" data-v="${n}" aria-pressed="${Number(val)===n}">${n}</button>`).join('') +
+    `</div>`;
+  return `
+  <div class="field"><label for="f-name">Recipe name</label>
+    <input id="f-name" class="input" value="${esc(r.name||'')}" placeholder="Chickpea and spinach curry"></div>
+
+  <div class="field"><label for="f-url">Link to the recipe</label>
+    <input id="f-url" class="input" type="url" inputmode="url" value="${esc(r.url||'')}" placeholder="https://"></div>
+
+  <div class="field"><label for="f-ing">Ingredients &mdash; one per line</label>
+    <textarea id="f-ing" class="input" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
+    <p class="hint">Paste the ingredient list straight from the page. Each line becomes a shopping list item.</p></div>
+
+  <div class="row2">
+    <div class="field"><label for="f-cost">Whole recipe costs</label>
+      <input id="f-cost" class="input" type="number" inputmode="decimal" step="0.10" min="0" value="${esc(r.cost ?? '')}" placeholder="6.50"></div>
+    <div class="field"><label for="f-serv">Servings</label>
+      <input id="f-serv" class="input" type="number" inputmode="numeric" step="1" min="1" value="${esc(r.servings ?? '')}" placeholder="4"></div>
+  </div>
+  <p class="hint" id="perServeHint" style="margin:-6px 0 16px"></p>
+
+  <div class="field"><label for="f-time">Minutes to cook</label>
+    <input id="f-time" class="input" type="number" inputmode="numeric" step="5" min="0" value="${esc(r.cookTime ?? '')}" placeholder="35"></div>
+
+  <div class="field"><label for="f-diet">Meat, vegetarian or vegan</label>
+    <select id="f-diet" class="input">
+      <option value="">Not set</option>
+      <option value="meat" ${r.diet==='meat'?'selected':''}>Meat</option>
+      <option value="vegetarian" ${r.diet==='vegetarian'?'selected':''}>Vegetarian</option>
+      <option value="vegan" ${r.diet==='vegan'?'selected':''}>Vegan</option>
+    </select></div>
+
+  <div class="field"><label>Favourite of</label>
+    <div class="chips" style="padding:0;margin:0;flex-wrap:wrap" id="favChips">
+      ${COOKS.map(c => `<button type="button" class="chip" data-fav="${c.key}" aria-pressed="${(r.favs||[]).includes(c.key)}">${esc(c.name)}</button>`).join('')}
+    </div></div>
+
+  <div class="field"><label>How healthy &mdash; 5 is best</label>${seg('health', r.health)}</div>
+  <div class="field"><label>Easy to make &mdash; 5 is no faff</label>${seg('rMake', r.rMake)}</div>
+  <div class="field"><label>Good to eat &mdash; 5 is delicious</label>${seg('rEat', r.rEat)}</div>
+  <div class="field"><label>Washing up &mdash; 5 is barely any</label>${seg('rWash', r.rWash)}</div>
+  `;
+}
+
+function wireForm(root, r){
+  root.querySelectorAll('[data-seg]').forEach(seg => {
+    seg.querySelectorAll('button').forEach(b => b.onclick = () => {
+      const on = b.getAttribute('aria-pressed') === 'true';
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed','false'));
+      b.setAttribute('aria-pressed', on ? 'false' : 'true');
+    });
+  });
+  root.querySelectorAll('[data-fav]').forEach(b => b.onclick = () => {
+    b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  });
+  const upd = () => {
+    const c = Number(root.querySelector('#f-cost').value) || 0;
+    const s = Number(root.querySelector('#f-serv').value) || 0;
+    root.querySelector('#perServeHint').textContent =
+      (c && s) ? `That's ${money(c/s)} a serving.` : '';
+  };
+  root.querySelector('#f-cost').oninput = upd;
+  root.querySelector('#f-serv').oninput = upd;
+  upd();
+}
+
+function readForm(root){
+  const segVal = name => {
+    const b = root.querySelector(`[data-seg="${name}"] [aria-pressed="true"]`);
+    return b ? Number(b.dataset.v) : null;
+  };
+  return {
+    name: root.querySelector('#f-name').value.trim(),
+    url: root.querySelector('#f-url').value.trim(),
+    ingredients: root.querySelector('#f-ing').value,
+    cost: root.querySelector('#f-cost').value === '' ? null : Number(root.querySelector('#f-cost').value),
+    servings: root.querySelector('#f-serv').value === '' ? null : Number(root.querySelector('#f-serv').value),
+    cookTime: root.querySelector('#f-time').value === '' ? null : Number(root.querySelector('#f-time').value),
+    diet: root.querySelector('#f-diet').value || null,
+    favs: [...root.querySelectorAll('[data-fav][aria-pressed="true"]')].map(b => b.dataset.fav),
+    health: segVal('health'), rMake: segVal('rMake'),
+    rEat: segVal('rEat'), rWash: segVal('rWash'),
+  };
+}
+
+let addFormBuilt = false;
+function renderAddForm(){
+  if (addFormBuilt) return;
+  addFormBuilt = true;
+  const host = $('#addFormHost');
+  host.innerHTML = formHtml({}) +
+    `<button class="btn btn-block" id="saveNew" style="margin-top:6px">Save recipe</button>`;
+  wireForm(host, {});
+  $('#saveNew').onclick = async () => {
+    const data = readForm(host);
+    if (!data.name){ toast('Give it a name first'); host.querySelector('#f-name').focus(); return; }
+    await addDoc(recipesCol, {...data, lastCooked: null, createdAt: serverTimestamp()});
+    host.innerHTML = ''; addFormBuilt = false; renderAddForm();
+    toast('Recipe saved');
+    document.querySelector('.tab[data-view="recipes"]').click();
+  };
+}
+
+/* ---------- sheet ---------- */
+function openSheet(title, html){
+  $('#sheetTitle').textContent = title;
+  $('#sheetBody').innerHTML = html;
+  $('#sheet').classList.add('open');
+  $('#sheetBg').classList.add('open');
+  $('#sheetBody').scrollTop = 0;
+}
+function closeSheet(){
+  $('#sheet').classList.remove('open');
+  $('#sheetBg').classList.remove('open');
+}
+$('#sheetClose').onclick = closeSheet;
+$('#sheetBg').onclick = closeSheet;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+function openRecipe(id){
+  const r = recipes.find(x => x.id === id);
+  if (!r) return;
+  openSheet(r.name || 'Recipe', `
+    <div style="display:flex;gap:9px;margin-bottom:16px">
+      <button class="btn" id="mkList" style="flex:1">Make shopping list</button>
+      <button class="btn btn-ghost" id="cookedNow">Cooked today</button>
+    </div>
+    ${r.url ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open the original recipe</a></p>` : ''}
+    ${formHtml(r)}
+    <button class="btn btn-block" id="saveEdit">Save changes</button>
+    <button class="btn btn-danger btn-block" id="delRecipe" style="margin-top:10px">Delete recipe</button>
+    <p class="hint" style="text-align:center;margin-top:14px">${esc(agoLabel(r.lastCooked))}</p>
+  `);
+  const body = $('#sheetBody');
+  wireForm(body, r);
+
+  body.querySelector('#mkList').onclick = async () => {
+    const items = (r.ingredients||'').split('\n').map(s => s.trim())
+      .filter(Boolean).map(text => ({text, checked:false}));
+    if (!items.length){ toast('No ingredients on this recipe yet'); return; }
+    await setDoc(shopDoc, { recipeId: r.id, recipeName: r.name || 'Shopping list', items });
+    closeSheet();
+    document.querySelector('.tab[data-view="shop"]').click();
+    toast('List ready');
+  };
+  body.querySelector('#cookedNow').onclick = async () => {
+    await updateDoc(doc(recipesCol, r.id), { lastCooked: todayKey() });
+    closeSheet(); toast('Logged for today');
+  };
+  body.querySelector('#saveEdit').onclick = async () => {
+    const data = readForm(body);
+    if (!data.name){ toast('Give it a name first'); return; }
+    await updateDoc(doc(recipesCol, r.id), data);
+    closeSheet(); toast('Changes saved');
+  };
+  body.querySelector('#delRecipe').onclick = async () => {
+    if (!confirm(`Delete "${r.name}"? This removes it for both of you.`)) return;
+    await deleteDoc(doc(recipesCol, r.id));
+    closeSheet(); toast('Recipe deleted');
+  };
+}
+
+function openPicker(dateKey){
+  const d = parseKey(dateKey);
+  const label = d.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'});
+  if (!recipes.length){
+    openSheet(label, `<div class="empty"><h3>No recipes to choose from</h3>
+      <p>Add a recipe first, then come back and plan it in.</p></div>`);
+    return;
+  }
+  const byStale = recipes.slice().sort((a,b) =>
+    (a.lastCooked||'0000-00-00').localeCompare(b.lastCooked||'0000-00-00'));
+  openSheet(label, `
+    <p class="eyebrow">Least recently cooked first</p>
+    ${byStale.map(r => `<button class="pickitem" data-r="${r.id}">
+      <span class="nm">${esc(r.name||'Untitled')}</span>
+      <span class="mt">${esc(agoLabel(r.lastCooked))}</span></button>`).join('')}
+  `);
+  $('#sheetBody').querySelectorAll('[data-r]').forEach(el => el.onclick = async () => {
+    await setDoc(doc(planCol, dateKey), { recipeId: el.dataset.r });
+    closeSheet(); toast('Added to the plan');
+  });
+}
+
+/* ---------- service worker ---------- */
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
