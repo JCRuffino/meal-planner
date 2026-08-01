@@ -111,6 +111,10 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 .urlrow .input{flex:1;min-width:0}
 .urlrow .btn{flex:0 0 auto;padding:8px 15px}
 .btn:disabled{opacity:.55;cursor:default}
+/* confirmation state — the button itself becomes the receipt */
+.btn.is-saved,.btn.is-saved:disabled{background:var(--leaf);border-color:var(--leaf);color:#F4F8F1;opacity:1}
+.savebar{display:flex;gap:9px}
+.savebar .btn{flex:1}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 .empty{text-align:center;padding:44px 22px;color:var(--muted)}
 .empty h3{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;color:var(--ink);margin:0 0 6px}
@@ -422,6 +426,35 @@ function perServing(r){
 }
 function money(n){ return '£' + (Math.round(n*100)/100).toFixed(2); }
 
+/* Turns a save button into its own confirmation: Saving… then Saved, held long
+   enough to read before the sheet closes or the tab switches. Anything that
+   writes can fail — offline, or rules not published yet — and without this the
+   view just changes and you assume it worked. */
+async function withSaved(btn, work, done){
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await work();
+  } catch (e){
+    btn.disabled = false; btn.textContent = label;
+    toast("Didn't save — " + (e.code || e.message || 'try again'));
+    return;
+  }
+  btn.textContent = 'Saved';
+  btn.classList.add('is-saved');
+  setTimeout(() => {
+    btn.classList.remove('is-saved');
+    btn.disabled = false; btn.textContent = label;
+    if (done) done();
+  }, 850);
+}
+
+/* Same idea for the sheet's other writes, which close the sheet on success. */
+async function guard(work, okMsg){
+  try { await work(); if (okMsg) toast(okMsg); return true; }
+  catch (e){ toast("Didn't save — " + (e.code || e.message || 'try again')); return false; }
+}
+
 let toastTimer;
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -721,7 +754,7 @@ function renderShop(){
    otherwise <label for> resolves to whichever copy comes first and tapping a
    label in the edit sheet focuses the hidden Add form. Everything else is
    found by class, scoped to the form's own root. */
-function formHtml(r, p){
+function formHtml(r, p, showRatings){
   const seg = (name, val) => `<div class="seg" data-seg="${name}">` +
     [1,2,3,4,5].map(n => `<button type="button" data-v="${n}" aria-pressed="${Number(val)===n}">${n}</button>`).join('') +
     `</div>`;
@@ -763,6 +796,7 @@ function formHtml(r, p){
       <option value="vegan" ${r.diet==='vegan'?'selected':''}>Vegan</option>
     </select></div>
 
+  ${showRatings ? `
   <div class="field"><label>Favourite of</label>
     <div class="chips" style="padding:0;margin:0;flex-wrap:wrap">
       ${COOKS.map(c => `<button type="button" class="chip" data-fav="${c.key}" aria-pressed="${(r.favs||[]).includes(c.key)}">${esc(c.name)}</button>`).join('')}
@@ -771,7 +805,7 @@ function formHtml(r, p){
   <div class="field"><label>How healthy &mdash; 5 is best</label>${seg('health', r.health)}</div>
   <div class="field"><label>Easy to make &mdash; 5 is no faff</label>${seg('rMake', r.rMake)}</div>
   <div class="field"><label>Good to eat &mdash; 5 is delicious</label>${seg('rEat', r.rEat)}</div>
-  <div class="field"><label>Washing up &mdash; 5 is barely any</label>${seg('rWash', r.rWash)}</div>
+  <div class="field"><label>Washing up &mdash; 5 is barely any</label>${seg('rWash', r.rWash)}</div>` : ''}
   `;
 }
 
@@ -875,16 +909,21 @@ function renderAddForm(){
   if (addFormBuilt) return;
   addFormBuilt = true;
   const host = $('#addFormHost');
-  host.innerHTML = formHtml({}, 'add') +
-    `<button class="btn btn-block" id="saveNew" style="margin-top:6px">Save recipe</button>`;
+  /* No ratings or favourites when adding: you can't rate a meal you haven't
+     cooked, and a shorter form is a lower bar to getting the recipe in. */
+  host.innerHTML = formHtml({}, 'add', false) +
+    `<p class="hint" style="margin:-4px 0 14px">Ratings and favourites come later &mdash; open the recipe once it's saved.</p>
+     <button class="btn btn-block" id="saveNew">Save recipe</button>`;
   wireForm(host, {});
-  $('#saveNew').onclick = async () => {
+  $('#saveNew').onclick = e => {
     const data = readForm(host);
     if (!data.name){ toast('Give it a name first'); host.querySelector('.f-name').focus(); return; }
-    await addDoc(recipesCol, {...data, lastCooked: null, createdAt: serverTimestamp()});
-    host.innerHTML = ''; addFormBuilt = false; renderAddForm();
-    toast('Recipe saved');
-    document.querySelector('.tab[data-view="recipes"]').click();
+    withSaved(e.currentTarget,
+      () => addDoc(recipesCol, {...data, lastCooked: null, createdAt: serverTimestamp()}),
+      () => {
+        host.innerHTML = ''; addFormBuilt = false; renderAddForm();
+        document.querySelector('.tab[data-view="recipes"]').click();
+      });
   };
 }
 
@@ -937,8 +976,11 @@ function openRecipe(id){
     ${safeUrl(r.url) ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open the original recipe</a></p>` : ''}
     ${steps.length ? `<div class="method"><p class="eyebrow">Method</p>
       <ol>${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>` : ''}
-    ${formHtml(r, 'edit')}
-    <button class="btn btn-block" id="saveEdit">Save changes</button>
+    ${formHtml(r, 'edit', true)}
+    <div class="savebar">
+      <button class="btn btn-ghost" id="saveEdit">Save</button>
+      <button class="btn" id="saveEditClose">Save &amp; close</button>
+    </div>
     <button class="btn btn-danger btn-block" id="delRecipe" style="margin-top:10px">Delete recipe</button>
     <p class="hint" style="text-align:center;margin-top:14px">${esc(agoLabel(r.lastCooked))}</p>
   `);
@@ -949,25 +991,34 @@ function openRecipe(id){
     const items = (r.ingredients||'').split('\n').map(s => s.trim())
       .filter(Boolean).map(text => ({text, checked:false}));
     if (!items.length){ toast('No ingredients on this recipe yet'); return; }
-    await setDoc(shopDoc, { recipeId: r.id, recipeName: r.name || 'Shopping list', items });
+    const ok = await guard(() =>
+      setDoc(shopDoc, { recipeId: r.id, recipeName: r.name || 'Shopping list', items }));
+    if (!ok) return;
     closeSheet();
     document.querySelector('.tab[data-view="shop"]').click();
     toast('List ready');
   };
   body.querySelector('#cookedNow').onclick = async () => {
-    await updateDoc(doc(recipesCol, r.id), { lastCooked: todayKey() });
-    closeSheet(); toast('Logged for today');
+    if (await guard(() => updateDoc(doc(recipesCol, r.id), { lastCooked: todayKey() }), 'Logged for today'))
+      closeSheet();
   };
-  body.querySelector('#saveEdit').onclick = async () => {
+
+  /* Save leaves the sheet open so you can keep editing; Save & close is the
+     usual way out. Both confirm on the button itself. */
+  const save = (btn, andClose) => {
     const data = readForm(body);
-    if (!data.name){ toast('Give it a name first'); return; }
-    await updateDoc(doc(recipesCol, r.id), data);
-    closeSheet(); toast('Changes saved');
+    if (!data.name){
+      toast('Give it a name first');
+      body.querySelector('.f-name').focus();
+      return;
+    }
+    withSaved(btn, () => updateDoc(doc(recipesCol, r.id), data), andClose ? closeSheet : null);
   };
+  body.querySelector('#saveEdit').onclick = e => save(e.currentTarget, false);
+  body.querySelector('#saveEditClose').onclick = e => save(e.currentTarget, true);
   body.querySelector('#delRecipe').onclick = async () => {
     if (!confirm(`Delete "${r.name}"? This removes it for both of you.`)) return;
-    await deleteDoc(doc(recipesCol, r.id));
-    closeSheet(); toast('Recipe deleted');
+    if (await guard(() => deleteDoc(doc(recipesCol, r.id)), 'Recipe deleted')) closeSheet();
   };
 }
 
