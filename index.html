@@ -201,6 +201,17 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 .stext{font-size:15.5px;line-height:1.35}
 .sprog{font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);white-space:nowrap}
 
+/* ---------- method ---------- */
+.method{
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;margin-bottom:18px;box-shadow:var(--shadow);
+}
+.method .eyebrow{margin-bottom:9px}
+.method ol{margin:0;padding-left:21px}
+.method li{margin-bottom:10px;line-height:1.5;font-size:15px}
+.method li:last-child{margin-bottom:0}
+.method li::marker{font-family:"DM Mono",monospace;font-size:12.5px;color:var(--muted)}
+
 /* ---------- sheet ---------- */
 .sheet-bg{position:fixed;inset:0;background:rgba(22,33,28,.42);z-index:60;opacity:0;pointer-events:none;transition:opacity .18s ease}
 .sheet-bg.open{opacity:1;pointer-events:auto}
@@ -720,6 +731,10 @@ function formHtml(r, p){
     <textarea id="${p}-ing" class="input f-ing" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
     <p class="hint">Paste the ingredient list straight from the page. Each line becomes a shopping list item.</p></div>
 
+  <div class="field"><label for="${p}-method">Method &mdash; one step per line</label>
+    <textarea id="${p}-method" class="input f-method" placeholder="Heat the oil and soften the onion.&#10;Add the spices and cook for a minute.&#10;Tip in the chickpeas and simmer.">${esc(r.method||'')}</textarea>
+    <p class="hint">Optional. Fill this in and you won't need to open the link while you're cooking.</p></div>
+
   <div class="row2">
     <div class="field"><label for="${p}-cost">Whole recipe costs</label>
       <input id="${p}-cost" class="input f-cost" type="number" inputmode="decimal" step="0.10" min="0" value="${esc(r.cost ?? '')}" placeholder="6.50"></div>
@@ -783,6 +798,7 @@ function readForm(root){
     name: val('f-name').trim(),
     url: val('f-url').trim(),
     ingredients: val('f-ing'),
+    method: val('f-method'),
     cost: val('f-cost') === '' ? null : Number(val('f-cost')),
     servings: val('f-serv') === '' ? null : Number(val('f-serv')),
     cookTime: val('f-time') === '' ? null : Number(val('f-time')),
@@ -849,12 +865,17 @@ $('#sheet').addEventListener('keydown', e => {
 function openRecipe(id){
   const r = recipes.find(x => x.id === id);
   if (!r) return;
+  /* Shown as steps above the form: when you open a recipe mid-cook you want to
+     read the method, not scroll past a textarea of it. */
+  const steps = (r.method || '').split('\n').map(s => s.trim()).filter(Boolean);
   openSheet(r.name || 'Recipe', `
     <div style="display:flex;gap:9px;margin-bottom:16px">
       <button class="btn" id="mkList" style="flex:1">Make shopping list</button>
       <button class="btn btn-ghost" id="cookedNow">Cooked today</button>
     </div>
     ${safeUrl(r.url) ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open the original recipe</a></p>` : ''}
+    ${steps.length ? `<div class="method"><p class="eyebrow">Method</p>
+      <ol>${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>` : ''}
     ${formHtml(r, 'edit')}
     <button class="btn btn-block" id="saveEdit">Save changes</button>
     <button class="btn btn-danger btn-block" id="delRecipe" style="margin-top:10px">Delete recipe</button>
