@@ -14,5 +14,9 @@ window.APP_CONFIG = {
     { key: "izzy", name: "Izzy" }
   ],
 
-  spaceId: "home"
+  spaceId: "home",
+
+  // Paste the Cloudflare Worker URL here once deployed (see README).
+  // Empty means the Fetch button stays hidden.
+  recipeFetcher: ""
 };

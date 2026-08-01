@@ -107,6 +107,10 @@ a{color:var(--moss)}
 .input:focus,.chip:focus-visible,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--ochre);outline-offset:2px}
 textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM Mono",monospace;font-size:14px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.urlrow{display:flex;gap:8px;align-items:stretch}
+.urlrow .input{flex:1;min-width:0}
+.urlrow .btn{flex:0 0 auto;padding:8px 15px}
+.btn:disabled{opacity:.55;cursor:default}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 .empty{text-align:center;padding:44px 22px;color:var(--muted)}
 .empty h3{font-family:"Bricolage Grotesque",sans-serif;font-size:18px;color:var(--ink);margin:0 0 6px}
@@ -364,6 +368,7 @@ if (!CFG || !CFG.firebase) {
 }
 const COOKS = CFG.cooks || [{key:'a',name:'A'},{key:'b',name:'B'}];
 const SPACE = CFG.spaceId || 'home';
+const FETCHER = (CFG.recipeFetcher || '').trim();   // '' hides the Fetch button
 
 const app = initializeApp(CFG.firebase);
 const auth = getAuth(app);
@@ -725,7 +730,11 @@ function formHtml(r, p){
     <input id="${p}-name" class="input f-name" value="${esc(r.name||'')}" placeholder="Chickpea and spinach curry"></div>
 
   <div class="field"><label for="${p}-url">Link to the recipe</label>
-    <input id="${p}-url" class="input f-url" type="url" inputmode="url" value="${esc(r.url||'')}" placeholder="https://"></div>
+    <div class="urlrow">
+      <input id="${p}-url" class="input f-url" type="url" inputmode="url" value="${esc(r.url||'')}" placeholder="https://">
+      <button type="button" class="btn btn-ghost f-fetch">Fetch</button>
+    </div>
+    <p class="hint f-fetchmsg">Paste a link and tap Fetch to fill in whatever the page publishes.</p></div>
 
   <div class="field"><label for="${p}-ing">Ingredients &mdash; one per line</label>
     <textarea id="${p}-ing" class="input f-ing" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
@@ -786,6 +795,58 @@ function wireForm(root, r){
   root.querySelector('.f-cost').oninput = upd;
   root.querySelector('.f-serv').oninput = upd;
   upd();
+
+  const btn = root.querySelector('.f-fetch');
+  if (!FETCHER){
+    btn.classList.add('hidden');
+    root.querySelector('.f-fetchmsg').textContent =
+      'Paste the ingredients and method in below.';
+  } else {
+    btn.onclick = () => fetchRecipe(root, btn);
+  }
+}
+
+/* Pulls what a recipe page publishes about itself through the Cloudflare
+   worker and drops it into the form. Only ever fills blanks — anything you
+   have already typed is left alone, and nothing is saved until you say so. */
+async function fetchRecipe(root, btn){
+  const url = root.querySelector('.f-url').value.trim();
+  const msg = root.querySelector('.f-fetchmsg');
+  if (!safeUrl(url)){ msg.textContent = 'Paste an http or https link first.'; return; }
+
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Reading…';
+  msg.textContent = 'Reading the page…';
+  try {
+    const res = await fetch(FETCHER + '?url=' + encodeURIComponent(url));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+    const filled = [];
+    const set = (cls, label, value) => {
+      if (value === null || value === undefined || value === '') return;
+      const el = root.querySelector('.' + cls);
+      if (!el || el.value.trim() !== '') return;
+      el.value = value;
+      filled.push(label);
+    };
+    set('f-name',   'name',        data.name);
+    set('f-ing',    'ingredients', (data.ingredients || []).join('\n'));
+    set('f-method', 'method',      (data.method || []).join('\n'));
+    set('f-serv',   'servings',    data.servings);
+    set('f-time',   'cook time',   data.cookTime);
+
+    /* servings feeds the per-serving hint */
+    root.querySelector('.f-serv').dispatchEvent(new Event('input'));
+
+    msg.textContent = filled.length
+      ? `Filled in ${filled.join(', ')}. Check it over, then save.`
+      : 'Nothing to fill in — those fields already have something in them.';
+  } catch (e){
+    msg.textContent = (e.message || 'Could not read that page') + ' Paste it in by hand instead.';
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 }
 
 function readForm(root){

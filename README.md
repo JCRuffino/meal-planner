@@ -115,6 +115,32 @@ or signed in as some other account. You should see nothing.
 
 It then opens full screen with no browser chrome, like any other app.
 
+### 6. Optional — filling the form in from a recipe link
+
+Most recipe sites publish machine-readable `schema.org/Recipe` data in the page,
+so the app can read the name, ingredients, method, servings and time straight off
+a link. A browser can't fetch another site's HTML, so this needs one small thing
+running server-side. `worker/recipe-fetcher.js` is that thing.
+
+Cloudflare Workers is free for this — 100,000 requests a day, no card:
+
+1. Sign up at `dash.cloudflare.com`, then **Workers & Pages → Create → Worker**.
+2. Name it `recipe-fetcher`, deploy the placeholder, then **Edit code**.
+3. Delete what's there, paste in all of `worker/recipe-fetcher.js`, **Deploy**.
+4. Copy the URL it gives you — `https://recipe-fetcher.<something>.workers.dev`.
+5. Put it in `config.js` as `recipeFetcher`, then commit and push.
+
+A **Fetch** button then appears beside the recipe link field. Until you set it,
+the button stays hidden and everything works by pasting, as before.
+
+The worker only answers requests from the origins listed at the top of the file.
+If you deploy the app anywhere other than `jcruffino.github.io`, add that origin
+to `ALLOWED_ORIGINS` — otherwise it's an open proxy for whoever finds the URL.
+
+Two things to expect. Fetch only ever fills in *blank* fields, so it can't wipe
+something you typed, and it never saves — you check it and press save yourself.
+And it can't know your cost, healthiness or ratings, so those stay manual.
+
 ---
 
 ## Pushing to GitHub
@@ -176,9 +202,7 @@ Firestore free quota. There is no card on file unless you add one.
    flagged. Needs ingredient quantities parsed and combined, which is the
    genuinely fiddly part.
 2. **A pantry list** so olive oil and salt stop appearing on every list.
-3. **Pull the ingredients from a URL automatically.** Most recipe sites publish
-   machine-readable data in the page, so this works more often than you'd
-   expect — but it needs a small server-side function, because browsers block
-   reading other sites directly.
-4. **Photos**, using Firebase Storage.
-5. **Lunches**, if dinners-only starts to chafe.
+3. **Photos**, using Firebase Storage.
+4. **Lunches**, if dinners-only starts to chafe.
+
+*Pulling ingredients from a URL was on this list and is now built — see step 6.*

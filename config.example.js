@@ -20,5 +20,10 @@ window.APP_CONFIG = {
   ],
 
   // All data lives under /spaces/<spaceId>/ in Firestore.
-  spaceId: "home"
+  spaceId: "home",
+
+  // Optional. The Cloudflare Worker URL from worker/recipe-fetcher.js, which
+  // fills the form in from a recipe link. Leave it empty and the Fetch button
+  // simply doesn't appear — pasting still works exactly as before.
+  recipeFetcher: ""
 };
