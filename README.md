@@ -124,11 +124,20 @@ running server-side. `worker/recipe-fetcher.js` is that thing.
 
 Cloudflare Workers is free for this — 100,000 requests a day, no card:
 
-1. Sign up at `dash.cloudflare.com`, then **Workers & Pages → Create → Worker**.
-2. Name it `recipe-fetcher`, deploy the placeholder, then **Edit code**.
-3. Delete what's there, paste in all of `worker/recipe-fetcher.js`, **Deploy**.
-4. Copy the URL it gives you — `https://recipe-fetcher.<something>.workers.dev`.
-5. Put it in `config.js` as `recipeFetcher`, then commit and push.
+1. Sign up at `dash.cloudflare.com`, then **Workers & Pages → Create**.
+2. Choose **Start with Hello World!** — not a template. The templates are all
+   framework starters with build steps; this needs a bare worker.
+3. Name it `recipe-fetcher`, pick JavaScript if asked, and **Deploy** the
+   placeholder. It has to exist before you can edit it.
+4. **Edit code**, select all, delete, paste in the whole of
+   `worker/recipe-fetcher.js`, then **Deploy** again.
+5. Copy the URL — `https://recipe-fetcher.<your-subdomain>.workers.dev`.
+6. Put it in `config.js` as `recipeFetcher`, then commit and push.
+
+To check it deployed, open `<your-worker-url>/?url=https://example.com` in a
+browser. `{"error":"Not an allowed origin."}` is the *right* answer — a browser
+tab sends no Origin header, so the lock refuses it and only the app gets through.
+A Hello World greeting means the paste didn't save.
 
 A **Fetch** button then appears beside the recipe link field. Until you set it,
 the button stays hidden and everything works by pasting, as before.
