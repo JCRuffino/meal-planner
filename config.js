@@ -16,7 +16,6 @@ window.APP_CONFIG = {
 
   spaceId: "home",
 
-  // Paste the Cloudflare Worker URL here once deployed (see README).
-  // Empty means the Fetch button stays hidden.
-  recipeFetcher: ""
+  // Cloudflare Worker from worker/recipe-fetcher.js. Empty hides the Fetch button.
+  recipeFetcher: "https://recipte-fetcher.josephcruffino.workers.dev"
 };
