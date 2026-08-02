@@ -107,6 +107,9 @@ a{color:var(--moss)}
 .input:focus,.chip:focus-visible,.btn:focus-visible,.tab:focus-visible{outline:2px solid var(--ochre);outline-offset:2px}
 textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM Mono",monospace;font-size:14px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.quickadd{display:flex;gap:8px;align-items:stretch;margin-bottom:12px}
+.quickadd .input{flex:1;min-width:0}
+.quickadd .btn{flex:0 0 auto;padding:8px 18px}
 .urlrow{display:flex;gap:8px;align-items:stretch}
 .urlrow .input{flex:1;min-width:0}
 .urlrow .btn{flex:0 0 auto;padding:8px 15px}
@@ -306,6 +309,24 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
       <div id="recipeList" class="rlist"></div>
     </section>
 
+    <!-- OUT -->
+    <section id="view-out" class="hidden">
+      <div class="quickadd">
+        <input id="newPlace" class="input" placeholder="Add a place &mdash; just the name" autocomplete="off">
+        <button class="btn" id="addPlace">Add</button>
+      </div>
+      <div class="chips" id="placeChips"></div>
+      <div class="field" style="margin-bottom:14px">
+        <select id="placeSort" class="input">
+          <option value="stale">Sort by not been in a while</option>
+          <option value="rating">Sort by best</option>
+          <option value="spend">Sort by cheapest</option>
+          <option value="name">Sort by name</option>
+        </select>
+      </div>
+      <div id="placeList" class="rlist"></div>
+    </section>
+
     <!-- PLAN -->
     <section id="view-plan" class="hidden">
       <p class="eyebrow" id="planCount">Next 10 days</p>
@@ -328,6 +349,9 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
     <div class="tabs-inner">
       <button class="tab" data-view="recipes" aria-current="page">
         <svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5zM8 8h7M8 12h7"/></svg>Recipes
+      </button>
+      <button class="tab" data-view="out">
+        <svg viewBox="0 0 24 24"><path d="M7 3v7a2 2 0 0 0 4 0V3M9 10v11M16.5 3c-1.5 1.6-2 3.6-2 5.6 0 1.4.9 2.4 2 2.4V3zM16.5 11v10"/></svg>Out
       </button>
       <button class="tab" data-view="plan">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3.5v3M16 3.5v3"/></svg>Plan
@@ -379,17 +403,22 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const recipesCol = collection(db, 'spaces', SPACE, 'recipes');
+const placesCol  = collection(db, 'spaces', SPACE, 'places');
 const planCol    = collection(db, 'spaces', SPACE, 'plan');
 const shopDoc    = doc(db, 'spaces', SPACE, 'meta', 'shopping');
 
 /* ---------- state ---------- */
 let recipes = [];            // {id, ...}
-let plan = {};               // 'YYYY-MM-DD' -> {recipeId}
+let places = [];             // {id, name, url, spend, rating, lastVisited}
+let plan = {};               // 'YYYY-MM-DD' -> {recipeId} | {placeId}
 let shopping = null;         // {recipeName, items:[{text,checked}]}
 let view = 'recipes';
 let filter = 'all';
 let searchTerm = '';
 let sortBy = 'cost';
+let placeFilter = 'all';
+let placeSort = 'stale';
+let pickerMode = 'cook';     // which half of the day picker you're looking at
 let rolledUp = false;
 
 /* ---------- helpers ---------- */
@@ -410,15 +439,37 @@ function keyFor(offset){
 function parseKey(k){ const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d,12,0,0,0); }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 
-function agoLabel(key){
-  if(!key) return 'Never cooked';
+const COOK_WORDS  = { never:'Never cooked', today:'Cooked today',   yesterday:'Cooked yesterday' };
+const PLACE_WORDS = { never:'Never been',   today:'Ate here today', yesterday:'Ate here yesterday' };
+
+function agoLabel(key, words){
+  const w = words || COOK_WORDS;
+  if(!key) return w.never;
   const n = daysBetween(parseKey(key), parseKey(todayKey()));
   if(n < 0) return 'Planned';
-  if(n === 0) return 'Cooked today';
-  if(n === 1) return 'Cooked yesterday';
+  if(n === 0) return w.today;
+  if(n === 1) return w.yesterday;
   if(n < 14) return `${n} days ago`;
   if(n < 60) return `${Math.round(n/7)} weeks ago`;
   return `${Math.round(n/30)} months ago`;
+}
+
+/* Least recently used first — how you actually decide what to eat. */
+const byStale = field => (a,b) =>
+  (a[field]||'0000-00-00').localeCompare(b[field]||'0000-00-00');
+
+const segHtml = (name, val) => `<div class="seg" data-seg="${name}">` +
+  [1,2,3,4,5].map(n => `<button type="button" data-v="${n}" aria-pressed="${Number(val)===n}">${n}</button>`).join('') +
+  `</div>`;
+
+function wireSegs(root){
+  root.querySelectorAll('[data-seg]').forEach(seg => {
+    seg.querySelectorAll('button').forEach(b => b.onclick = () => {
+      const on = b.getAttribute('aria-pressed') === 'true';
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed','false'));
+      b.setAttribute('aria-pressed', on ? 'false' : 'true');
+    });
+  });
 }
 function perServing(r){
   const c = Number(r.cost)||0, s = Number(r.servings)||0;
@@ -510,7 +561,7 @@ function denied(user){
 /* ---------- live data ---------- */
 let started = false;
 let unsubs = [];
-let recipesLoaded = false, planLoaded = false;
+let recipesLoaded = false, planLoaded = false, placesLoaded = false;
 
 function startListening(user){
   if (started) return; started = true;
@@ -519,6 +570,13 @@ function startListening(user){
   unsubs.push(onSnapshot(recipesCol, snap => {
     recipes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     recipesLoaded = true;
+    rollOldDays();
+    render();
+  }, onErr));
+
+  unsubs.push(onSnapshot(placesCol, snap => {
+    places = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    placesLoaded = true;
     rollOldDays();
     render();
   }, onErr));
@@ -541,8 +599,8 @@ function stopListening(){
   unsubs.forEach(u => { try { u(); } catch(e){} });
   unsubs = [];
   started = false;
-  recipesLoaded = planLoaded = rolledUp = false;
-  recipes = []; plan = {}; shopping = null;
+  recipesLoaded = planLoaded = placesLoaded = rolledUp = false;
+  recipes = []; places = []; plan = {}; shopping = null;
 }
 
 /* Past planned dinners become "last cooked", then drop off the rail.
@@ -551,19 +609,26 @@ function stopListening(){
    no guaranteed order. Rolling early would delete the day without recording
    the date it was meant to save. */
 async function rollOldDays(){
-  if (rolledUp || !recipesLoaded || !planLoaded) return;
+  if (rolledUp || !recipesLoaded || !planLoaded || !placesLoaded) return;
   const t = todayKey();
   const old = Object.keys(plan).filter(k => k < t);
   if (!old.length) return;
   rolledUp = true;
   for (const k of old){
-    const rid = plan[k]?.recipeId;
-    if (rid){
-      const r = recipes.find(x => x.id === rid);
+    const entry = plan[k] || {};
+    /* A past day logs itself against whichever it held — a recipe's last
+       cooked date, or a place's last visited one. If the date fails to write,
+       leave the day alone rather than destroying it; next load has another go. */
+    if (entry.recipeId){
+      const r = recipes.find(x => x.id === entry.recipeId);
       if (r && (!r.lastCooked || r.lastCooked < k)){
-        /* If the date fails to write, leave the day alone rather than
-           destroying it — next load gets another go. */
-        try { await updateDoc(doc(recipesCol, rid), { lastCooked: k }); }
+        try { await updateDoc(doc(recipesCol, entry.recipeId), { lastCooked: k }); }
+        catch(e){ continue; }
+      }
+    } else if (entry.placeId){
+      const p = places.find(x => x.id === entry.placeId);
+      if (p && (!p.lastVisited || p.lastVisited < k)){
+        try { await updateDoc(doc(placesCol, entry.placeId), { lastVisited: k }); }
         catch(e){ continue; }
       }
     }
@@ -572,14 +637,14 @@ async function rollOldDays(){
 }
 
 /* ---------- navigation ---------- */
-const TITLES = { recipes:'Recipes', plan:'Next 10 days', shop:'Shopping list', add:'Add a recipe' };
+const VIEWS = ['recipes','out','plan','shop','add'];
+const TITLES = { recipes:'Recipes', out:'Eating out', plan:'Next 10 days', shop:'Shopping list', add:'Add a recipe' };
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     view = btn.dataset.view;
     document.querySelectorAll('.tab').forEach(b =>
       b.setAttribute('aria-current', b === btn ? 'page' : 'false'));
-    ['recipes','plan','shop','add'].forEach(v =>
-      $('#view-'+v).classList.toggle('hidden', v !== view));
+    VIEWS.forEach(v => $('#view-'+v).classList.toggle('hidden', v !== view));
     $('#viewTitle').textContent = TITLES[view];
     window.scrollTo(0,0);
     render();
@@ -633,6 +698,7 @@ function visibleRecipes(){
 /* ---------- render ---------- */
 function render(){
   if (view === 'recipes') renderRecipes();
+  if (view === 'out') renderPlaces();
   if (view === 'plan') renderPlan();
   if (view === 'shop') renderShop();
   if (view === 'add') renderAddForm();
@@ -691,7 +757,9 @@ function renderPlan(){
     const k = keyFor(i);
     const d = parseKey(k);
     const rid = plan[k]?.recipeId;
+    const pid = plan[k]?.placeId;
     const r = rid ? recipes.find(x => x.id === rid) : null;
+    const pl = pid ? places.find(x => x.id === pid) : null;
     const dow = i===0 ? 'Today' : i===1 ? 'Tmrw' : d.toLocaleDateString('en-GB',{weekday:'short'});
     let meal;
     if (r){
@@ -699,8 +767,14 @@ function renderPlan(){
       if (perServing(r)) sub.push(money(perServing(r)) + ' a serving');
       if (Number(r.cookTime)) sub.push(Number(r.cookTime) + ' min');
       meal = `<span class="name">${esc(r.name)}</span>${sub.length?`<span class="sub">${esc(sub.join(' · '))}</span>`:''}`;
+    } else if (pl){
+      const sub = ['Eating out'];
+      if (Number(pl.spend)) sub.push(money(Number(pl.spend)) + ' for two');
+      meal = `<span class="name">${esc(pl.name)}</span><span class="sub">${esc(sub.join(' · '))}</span>`;
     } else if (rid){
       meal = `<span class="none">Recipe was deleted &mdash; tap to change</span>`;
+    } else if (pid){
+      meal = `<span class="none">Place was deleted &mdash; tap to change</span>`;
     } else {
       meal = `<span class="none">Nothing planned</span>`;
     }
@@ -710,7 +784,7 @@ function renderPlan(){
           <span class="dow">${esc(dow)}</span><span class="num">${d.getDate()}</span>
         </button>
         <button class="dmeal" data-pick="${k}" style="text-align:left">${meal}</button>
-        ${rid ? `<button class="dclear" data-clear="${k}" aria-label="Clear this day">&times;</button>` : ''}
+        ${(rid || pid) ? `<button class="dclear" data-clear="${k}" aria-label="Clear this day">&times;</button>` : ''}
       </div></div>`;
   }
   $('#rail').innerHTML = html;
@@ -755,9 +829,7 @@ function renderShop(){
    label in the edit sheet focuses the hidden Add form. Everything else is
    found by class, scoped to the form's own root. */
 function formHtml(r, p, showRatings){
-  const seg = (name, val) => `<div class="seg" data-seg="${name}">` +
-    [1,2,3,4,5].map(n => `<button type="button" data-v="${n}" aria-pressed="${Number(val)===n}">${n}</button>`).join('') +
-    `</div>`;
+  const seg = segHtml;
   return `
   <div class="field"><label for="${p}-name">Recipe name</label>
     <input id="${p}-name" class="input f-name" value="${esc(r.name||'')}" placeholder="Chickpea and spinach curry"></div>
@@ -815,13 +887,7 @@ function formHtml(r, p, showRatings){
 }
 
 function wireForm(root, r){
-  root.querySelectorAll('[data-seg]').forEach(seg => {
-    seg.querySelectorAll('button').forEach(b => b.onclick = () => {
-      const on = b.getAttribute('aria-pressed') === 'true';
-      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed','false'));
-      b.setAttribute('aria-pressed', on ? 'false' : 'true');
-    });
-  });
+  wireSegs(root);
   root.querySelectorAll('[data-fav]').forEach(b => b.onclick = () => {
     b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
   });
@@ -1007,12 +1073,141 @@ function renderAddForm(){
   };
 }
 
+/* ---------- places we eat out ---------- */
+function buildPlaceChips(){
+  const opts = [{k:'all',label:'All'},{k:'new',label:'Want to try'},{k:'been',label:'Been'}];
+  $('#placeChips').innerHTML = opts.map(o =>
+    `<button class="chip" data-k="${o.k}" aria-pressed="${placeFilter===o.k}">${esc(o.label)}</button>`).join('');
+  $('#placeChips').querySelectorAll('.chip').forEach(c =>
+    c.onclick = () => { placeFilter = c.dataset.k; renderPlaces(); });
+}
+
+function renderPlaces(){
+  buildPlaceChips();
+  const host = $('#placeList');
+  if (!places.length){
+    host.innerHTML = `<div class="empty"><h3>Nowhere yet</h3>
+      <p>Add somewhere you fancy trying &mdash; the name on its own is enough,
+      and you can fill in the rest after you've been.</p></div>`;
+    return;
+  }
+  let list = places.slice();
+  if (placeFilter === 'new')  list = list.filter(p => !p.lastVisited);
+  if (placeFilter === 'been') list = list.filter(p => p.lastVisited);
+
+  const num = v => Number(v) || 0;
+  list.sort({
+    stale:  byStale('lastVisited'),
+    rating: (a,b) => num(b.rating) - num(a.rating),
+    spend:  (a,b) => (num(a.spend)||1e9) - (num(b.spend)||1e9),
+    name:   (a,b) => (a.name||'').localeCompare(b.name||''),
+  }[placeSort]);
+
+  if (!list.length){
+    host.innerHTML = `<div class="empty"><h3>Nothing matches</h3><p>Try a different filter.</p></div>`;
+    return;
+  }
+  host.innerHTML = list.map(p => {
+    const bits = [];
+    if (Number(p.spend))  bits.push(`<span><b>${money(Number(p.spend))}</b> for two</span>`);
+    if (Number(p.rating)) bits.push(`<span>rated <b>${Number(p.rating)}</b>/5</span>`);
+    bits.push(`<span>${esc(agoLabel(p.lastVisited, PLACE_WORDS))}</span>`);
+    return `<button class="ritem" data-id="${p.id}">
+      <h3>${esc(p.name || 'Untitled')}</h3>
+      ${!p.lastVisited ? `<div class="rtags"><span class="fav">Want to try</span></div>` : ''}
+      <div class="rdata">${bits.join('<span class="sep">·</span>')}</div>
+    </button>`;
+  }).join('');
+  host.querySelectorAll('.ritem').forEach(el => el.onclick = () => openPlace(el.dataset.id));
+}
+
+function placeFormHtml(p, prefix){
+  return `
+  <div class="field"><label for="${prefix}-name">Name</label>
+    <input id="${prefix}-name" class="input p-name" value="${esc(p.name||'')}" placeholder="The Camberwell Arms"></div>
+
+  <div class="field"><label for="${prefix}-url">Website</label>
+    <input id="${prefix}-url" class="input p-url" type="url" inputmode="url" value="${esc(p.url||'')}" placeholder="https://"></div>
+
+  <div class="field"><label for="${prefix}-spend">Typical spend for the two of you</label>
+    <input id="${prefix}-spend" class="input p-spend" type="number" inputmode="decimal" step="1" min="0" value="${esc(p.spend ?? '')}" placeholder="60"></div>
+
+  <div class="field"><label>How much you liked it &mdash; 5 is best</label>${segHtml('rating', p.rating)}</div>
+  `;
+}
+
+function readPlaceForm(root){
+  const v = c => root.querySelector('.' + c).value;
+  const picked = root.querySelector('[data-seg="rating"] [aria-pressed="true"]');
+  return {
+    name: v('p-name').trim(),
+    url: v('p-url').trim(),
+    spend: v('p-spend') === '' ? null : Number(v('p-spend')),
+    rating: picked ? Number(picked.dataset.v) : null,
+  };
+}
+
+function openPlace(id){
+  const p = places.find(x => x.id === id);
+  if (!p) return;
+  openSheet(p.name || 'Place', `
+    <button class="btn btn-block" id="ateHere" style="margin-bottom:16px">Ate here today</button>
+    ${safeUrl(p.url) ? `<p class="hint" style="margin:-8px 0 16px"><a href="${esc(p.url)}" target="_blank" rel="noopener">Visit the website</a></p>` : ''}
+    ${placeFormHtml(p, 'place')}
+    <div class="savebar">
+      <button class="btn btn-ghost" id="savePlace">Save</button>
+      <button class="btn" id="savePlaceClose">Save &amp; close</button>
+    </div>
+    <button class="btn btn-danger btn-block" id="delPlace" style="margin-top:10px">Delete place</button>
+    <p class="hint" style="text-align:center;margin-top:14px">${esc(agoLabel(p.lastVisited, PLACE_WORDS))}</p>
+  `);
+  const body = $('#sheetBody');
+  wireSegs(body);
+
+  body.querySelector('#ateHere').onclick = async () => {
+    if (await guard(() => updateDoc(doc(placesCol, p.id), { lastVisited: todayKey() }), 'Logged for today'))
+      closeSheet();
+  };
+  const save = (btn, andClose) => {
+    const data = readPlaceForm(body);
+    if (!data.name){
+      toast('Give it a name first');
+      body.querySelector('.p-name').focus();
+      return;
+    }
+    withSaved(btn, () => updateDoc(doc(placesCol, p.id), data), andClose ? closeSheet : null);
+  };
+  body.querySelector('#savePlace').onclick = e => save(e.currentTarget, false);
+  body.querySelector('#savePlaceClose').onclick = e => save(e.currentTarget, true);
+  body.querySelector('#delPlace').onclick = async () => {
+    if (!confirm(`Delete "${p.name}"? This removes it for both of you.`)) return;
+    if (await guard(() => deleteDoc(doc(placesCol, p.id)), 'Place deleted')) closeSheet();
+  };
+}
+
+/* Quick add — a name is all it takes; the rest can wait until you've been. */
+$('#addPlace').onclick = async () => {
+  const input = $('#newPlace');
+  const name = input.value.trim();
+  if (!name){ input.focus(); return; }
+  const ok = await guard(() => addDoc(placesCol, {
+    name, url:'', spend:null, rating:null, lastVisited:null, createdAt: serverTimestamp(),
+  }), 'Place added');
+  if (ok){ input.value = ''; input.focus(); }
+};
+$('#newPlace').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); $('#addPlace').click(); }
+});
+$('#placeSort').addEventListener('change', e => { placeSort = e.target.value; renderPlaces(); });
+
 /* ---------- sheet ---------- */
 const FOCUSABLE = 'button, a[href], input, select, textarea';
 let lastFocus = null;
 
 function openSheet(title, html){
-  lastFocus = document.activeElement;
+  /* Redrawing an open sheet (the picker toggling Cook/Eat out) must not
+     record a button inside the sheet as the place to return focus to. */
+  if (!$('#sheet').classList.contains('open')) lastFocus = document.activeElement;
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = html;
   $('#sheet').classList.add('open');
@@ -1105,23 +1300,39 @@ function openRecipe(id){
 function openPicker(dateKey){
   const d = parseKey(dateKey);
   const label = d.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'});
-  if (!recipes.length){
-    openSheet(label, `<div class="empty"><h3>No recipes to choose from</h3>
-      <p>Add a recipe first, then come back and plan it in.</p></div>`);
-    return;
-  }
-  const byStale = recipes.slice().sort((a,b) =>
-    (a.lastCooked||'0000-00-00').localeCompare(b.lastCooked||'0000-00-00'));
-  openSheet(label, `
-    <p class="eyebrow">Least recently cooked first</p>
-    ${byStale.map(r => `<button class="pickitem" data-r="${r.id}">
-      <span class="nm">${esc(r.name||'Untitled')}</span>
-      <span class="mt">${esc(agoLabel(r.lastCooked))}</span></button>`).join('')}
-  `);
-  $('#sheetBody').querySelectorAll('[data-r]').forEach(el => el.onclick = async () => {
-    await setDoc(doc(planCol, dateKey), { recipeId: el.dataset.r });
-    closeSheet(); toast('Added to the plan');
-  });
+
+  const draw = () => {
+    const cook = pickerMode === 'cook';
+    const items = cook ? recipes.slice().sort(byStale('lastCooked'))
+                       : places.slice().sort(byStale('lastVisited'));
+    const list = items.length
+      ? items.map(x => `<button class="pickitem" data-id="${x.id}">
+          <span class="nm">${esc(x.name || 'Untitled')}</span>
+          <span class="mt">${esc(agoLabel(cook ? x.lastCooked : x.lastVisited,
+                                          cook ? COOK_WORDS : PLACE_WORDS))}</span></button>`).join('')
+      : `<div class="empty"><h3>${cook ? 'No recipes yet' : 'Nowhere yet'}</h3>
+          <p>${cook ? 'Add one on the Add tab, then come back.'
+                    : 'Add somewhere on the Out tab, then come back.'}</p></div>`;
+
+    openSheet(label, `
+      <div class="seg" style="margin-bottom:15px">
+        <button type="button" data-mode="cook" aria-pressed="${cook}">Cook</button>
+        <button type="button" data-mode="out" aria-pressed="${!cook}">Eat out</button>
+      </div>
+      <p class="eyebrow">${cook ? 'Least recently cooked first' : 'Least recently visited first'}</p>
+      ${list}`);
+
+    const body = $('#sheetBody');
+    body.querySelectorAll('[data-mode]').forEach(b =>
+      b.onclick = () => { pickerMode = b.dataset.mode; draw(); });
+    body.querySelectorAll('[data-id]').forEach(el => el.onclick = async () => {
+      const entry = cook ? { recipeId: el.dataset.id } : { placeId: el.dataset.id };
+      if (await guard(() => setDoc(doc(planCol, dateKey), entry))){
+        closeSheet(); toast('Added to the plan');
+      }
+    });
+  };
+  draw();
 }
 
 /* ---------- service worker ---------- */
