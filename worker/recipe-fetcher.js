@@ -27,7 +27,31 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:5500',
 ];
 
-const OCR_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
+/* Tried in order until one returns parseable JSON. Moondream leads because it
+   carries no licence gate; the Llama vision models refuse with error 5016
+   until you accept Meta's community licence in the Cloudflare dashboard, and
+   that licence asks you to represent you're not in the EU — your call to make,
+   not the code's. If you do accept it, it'll simply start being used when
+   Moondream falls short. The two take different input shapes. */
+const OCR_MODELS = [
+  {
+    id: '@cf/moondream/moondream3.1-9B-A2B',
+    input: (dataUri) => ({
+      task: 'query',
+      image: dataUri,
+      question: OCR_PROMPT,
+      max_tokens: 1500,
+      reasoning: false,   // default is true and the trace pollutes the answer
+      stream: false,      // default is true, which would give us a stream
+    }),
+    read: r => r && (r.answer ?? r.caption),
+  },
+  {
+    id: '@cf/meta/llama-3.2-11b-vision-instruct',
+    input: (dataUri, bytes) => ({ image: bytes, prompt: OCR_PROMPT, max_tokens: 1500 }),
+    read: r => r && (r.response ?? r.description ?? r.text),
+  },
+];
 
 const OCR_PROMPT = `This image is a screenshot of a recipe posted on social media.
 
@@ -113,27 +137,44 @@ async function readScreenshot(request, env, cors) {
   if (buf.byteLength > 4_000_000)
     return json({ error: 'That image is too big. Under 4MB, please.' }, 413, cors);
 
-  let out;
-  try {
-    out = await env.AI.run(OCR_MODEL, {
-      image: [...new Uint8Array(buf)],
-      prompt: OCR_PROMPT,
-      max_tokens: 1500,
-    });
-  } catch (e) {
-    return json({ error: 'The reader failed: ' + (e.message || 'AI error') }, 502, cors);
+  const bytes = [...new Uint8Array(buf)];
+  const dataUri = toDataUri(buf, request.headers.get('Content-Type') || 'image/jpeg');
+
+  const tried = [];
+  for (const model of OCR_MODELS) {
+    let raw;
+    try {
+      raw = model.read(await env.AI.run(model.id, model.input(dataUri, bytes))) || '';
+    } catch (e) {
+      /* Licence gates, capacity, a model being retired — move to the next. */
+      tried.push(`${model.id}: ${String(e.message || e).slice(0, 120)}`);
+      continue;
+    }
+    const parsed = looseJson(raw);
+    if (parsed) {
+      return json({
+        name: typeof parsed.name === 'string' ? clean(parsed.name) : '',
+        ingredients: list(parsed.ingredients),
+        method: list(parsed.method),
+        via: model.id,
+      }, 200, cors);
+    }
+    tried.push(`${model.id}: replied but not as JSON — ${String(raw).slice(0, 120)}`);
   }
 
-  const raw = (out && (out.response ?? out.description ?? out.text)) || '';
-  const parsed = looseJson(raw);
-  if (!parsed)
-    return json({ error: "Couldn't make sense of that screenshot.", raw: String(raw).slice(0, 300) }, 422, cors);
+  return json({ error: "Couldn't read that screenshot.", tried }, 502, cors);
+}
 
-  return json({
-    name: typeof parsed.name === 'string' ? clean(parsed.name) : '',
-    ingredients: list(parsed.ingredients),
-    method: list(parsed.method),
-  }, 200, cors);
+/* Moondream wants a data URI rather than a byte array. Chunked because
+   String.fromCharCode blows the stack on a whole screenshot at once. */
+function toDataUri(buf, type) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${type};base64,${btoa(bin)}`;
 }
 
 /* Models like to wrap JSON in prose or code fences however firmly you ask. */
