@@ -769,6 +769,11 @@ function formHtml(r, p, showRatings){
     </div>
     <p class="hint f-fetchmsg">Paste a link and tap Fetch to fill in whatever the page publishes.</p></div>
 
+  <div class="field shotfield"><label>Or read a screenshot</label>
+    <button type="button" class="btn btn-ghost btn-block f-shot">Choose a screenshot</button>
+    <input type="file" accept="image/*" class="f-shotfile hidden">
+    <p class="hint f-shotmsg">For Instagram and the like: screenshot the caption, then pick it here. On a computer you can paste one straight in.</p></div>
+
   <div class="field"><label for="${p}-ing">Ingredients &mdash; one per line</label>
     <textarea id="${p}-ing" class="input f-ing" placeholder="2 tbsp olive oil&#10;1 onion, sliced&#10;400g tin chickpeas">${esc(r.ingredients||'')}</textarea>
     <p class="hint">Paste the ingredient list straight from the page. Each line becomes a shopping list item.</p></div>
@@ -831,12 +836,93 @@ function wireForm(root, r){
   upd();
 
   const btn = root.querySelector('.f-fetch');
+  const shot = root.querySelector('.f-shot');
+  const file = root.querySelector('.f-shotfile');
   if (!FETCHER){
     btn.classList.add('hidden');
     root.querySelector('.f-fetchmsg').textContent =
       'Paste the ingredients and method in below.';
+    root.querySelector('.shotfield').classList.add('hidden');
   } else {
     btn.onclick = () => fetchRecipe(root, btn);
+    shot.onclick = () => file.click();
+    file.onchange = () => {
+      if (file.files && file.files[0]) readShot(root, file.files[0]);
+      file.value = '';               // so picking the same file twice still fires
+    };
+    /* Desktop convenience — on a phone the file picker is the way in. */
+    root.addEventListener('paste', e => {
+      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+      if (!item) return;
+      e.preventDefault();
+      readShot(root, item.getAsFile());
+    });
+  }
+}
+
+/* Only ever writes into empty fields, so neither the link fetch nor the
+   screenshot reader can overwrite something you typed. Returns what it did. */
+function fillBlanks(root, pairs){
+  const filled = [];
+  for (const [cls, label, value] of pairs){
+    if (value === null || value === undefined || value === '') continue;
+    const el = root.querySelector('.' + cls);
+    if (!el || el.value.trim() !== '') continue;
+    el.value = value;
+    filled.push(label);
+  }
+  return filled;
+}
+
+/* Phone screenshots are several megabytes; the text is still perfectly legible
+   at this size and the upload is far quicker. */
+function shrinkImage(file, max = 1400){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      if (scale === 1 && file.size < 900000) return resolve(file);
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale);
+      c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => resolve(b || file), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not an image.')); };
+    img.src = url;
+  });
+}
+
+async function readShot(root, file){
+  const btn = root.querySelector('.f-shot');
+  const msg = root.querySelector('.f-shotmsg');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Reading…';
+  msg.textContent = 'Reading the screenshot — this takes a few seconds.';
+  try {
+    const blob = await shrinkImage(file);
+    const res = await fetch(FETCHER.replace(/\/+$/, '') + '/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type || 'image/jpeg' },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+    const filled = fillBlanks(root, [
+      ['f-name',   'name',        data.name],
+      ['f-ing',    'ingredients', (data.ingredients || []).join('\n')],
+      ['f-method', 'method',      (data.method || []).join('\n')],
+    ]);
+    msg.textContent = filled.length
+      ? `Filled in ${filled.join(', ')}. Read it over — screenshots don't always come out perfectly.`
+      : 'Nothing to fill in — those fields already have something in them.';
+  } catch (e){
+    msg.textContent = (e.message || 'Could not read that screenshot') + ' You can still type it in.';
+  } finally {
+    btn.disabled = false; btn.textContent = label;
   }
 }
 
@@ -856,19 +942,13 @@ async function fetchRecipe(root, btn){
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
-    const filled = [];
-    const set = (cls, label, value) => {
-      if (value === null || value === undefined || value === '') return;
-      const el = root.querySelector('.' + cls);
-      if (!el || el.value.trim() !== '') return;
-      el.value = value;
-      filled.push(label);
-    };
-    set('f-name',   'name',        data.name);
-    set('f-ing',    'ingredients', (data.ingredients || []).join('\n'));
-    set('f-method', 'method',      (data.method || []).join('\n'));
-    set('f-serv',   'servings',    data.servings);
-    set('f-time',   'cook time',   data.cookTime);
+    const filled = fillBlanks(root, [
+      ['f-name',   'name',        data.name],
+      ['f-ing',    'ingredients', (data.ingredients || []).join('\n')],
+      ['f-method', 'method',      (data.method || []).join('\n')],
+      ['f-serv',   'servings',    data.servings],
+      ['f-time',   'cook time',   data.cookTime],
+    ]);
 
     /* servings feeds the per-serving hint */
     root.querySelector('.f-serv').dispatchEvent(new Event('input'));

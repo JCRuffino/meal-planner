@@ -1,77 +1,151 @@
 /* Recipe fetcher for the Meal Planner.
  *
- * A browser cannot read another site's HTML — same-origin policy — so this sits
- * in the middle: it fetches the recipe page, pulls out the schema.org/Recipe
- * JSON-LD that most recipe sites publish, and hands back just the fields the
- * app's form needs.
+ * Two jobs, both things a browser can't do on its own:
  *
- * Deploy to Cloudflare Workers (see README), then put the resulting URL into
- * config.js as `recipeFetcher`. Until that's set, the app hides the Fetch
- * button and everything still works by pasting.
+ *   GET  /?url=https://example.com/a-recipe
+ *        Fetches the page and pulls out its schema.org/Recipe JSON-LD.
+ *        Same-origin policy stops the browser reading another site directly.
+ *        -> { name, ingredients: [], method: [], servings, cookTime }
  *
- * GET /?url=https://example.com/a-recipe
- *   -> { name, ingredients: [], method: [], servings, cookTime }
- *   -> { error: "..." } with a 4xx/5xx on failure
+ *   POST /ocr   (body: the image bytes)
+ *        Reads a screenshot — an Instagram caption, say — through a vision
+ *        model and returns the same shape. Needs an AI binding; see README.
+ *        -> { name, ingredients: [], method: [] }
+ *
+ * Errors come back as { error: "..." } with a 4xx/5xx.
+ *
+ * Deploy to Cloudflare Workers (see README), then put the URL into config.js
+ * as `recipeFetcher`. Until that's set the app hides both buttons and
+ * everything still works by pasting.
  */
 
 /* Only these origins may call the worker. Without this it's a free open proxy
-   for anyone who finds the URL. Add your own if you deploy elsewhere. */
+   — and a free AI endpoint — for anyone who finds the URL. */
 const ALLOWED_ORIGINS = [
   'https://jcruffino.github.io',
   'http://localhost:5500',
   'http://127.0.0.1:5500',
 ];
 
+const OCR_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
+
+const OCR_PROMPT = `This image is a screenshot of a recipe posted on social media.
+
+Reply with ONLY a JSON object and nothing else. No explanation, no markdown code fences. Use exactly these keys:
+
+{"name": "", "ingredients": [], "method": []}
+
+- "name": the dish name if the post gives one, otherwise "".
+- "ingredients": every ingredient as its own string. Where the post runs them together on one line separated by commas, split them into separate entries. Keep quantities exactly as written. Do not invent quantities that are not there.
+- "method": the cooking steps, one per entry. If the post has no method, use [].
+
+Transcribe only what the image actually says. Do not add ingredients or steps of your own.`;
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
     const allowed = ALLOWED_ORIGINS.includes(origin);
     const cors = {
       'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0],
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Access-Control-Max-Age': '86400',
       'Vary': 'Origin',
     };
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (request.method !== 'GET') return json({ error: 'Use GET.' }, 405, cors);
     if (!allowed) return json({ error: 'Not an allowed origin.' }, 403, cors);
 
-    const target = new URL(request.url).searchParams.get('url');
-    if (!target) return json({ error: 'Pass ?url=' }, 400, cors);
-
-    let u;
-    try { u = new URL(target); } catch { return json({ error: "That doesn't look like a URL." }, 400, cors); }
-    if (u.protocol !== 'http:' && u.protocol !== 'https:')
-      return json({ error: 'Only http and https links.' }, 400, cors);
-    /* Belt and braces: Workers can't reach private networks anyway, but no
-       reason to let this be pointed at loopback or link-local addresses. */
-    if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(u.hostname))
-      return json({ error: 'Not a public address.' }, 400, cors);
-
-    let html;
-    try {
-      const res = await fetch(u.toString(), {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; MealPlanner/1.0; +https://jcruffino.github.io/meal-planner/)',
-          'Accept': 'text/html,application/xhtml+xml',
-          'Accept-Language': 'en-GB,en;q=0.9',
-        },
-        redirect: 'follow',
-        cf: { cacheTtl: 300, cacheEverything: true },
-      });
-      if (!res.ok) return json({ error: `That site returned ${res.status}.` }, 502, cors);
-      html = await res.text();
-    } catch {
-      return json({ error: "Couldn't reach that page." }, 502, cors);
-    }
-
-    const recipe = findRecipe(html);
-    if (!recipe) return json({ error: "That page doesn't publish recipe data." }, 404, cors);
-    return json(shape(recipe), 200, cors);
+    const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    if (path === '/ocr') return readScreenshot(request, env, cors);
+    return readLink(request, cors);
   },
 };
+
+/* --- GET /?url= : read a recipe page ------------------------------------ */
+
+async function readLink(request, cors) {
+  if (request.method !== 'GET') return json({ error: 'Use GET.' }, 405, cors);
+
+  const target = new URL(request.url).searchParams.get('url');
+  if (!target) return json({ error: 'Pass ?url=' }, 400, cors);
+
+  let u;
+  try { u = new URL(target); } catch { return json({ error: "That doesn't look like a URL." }, 400, cors); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:')
+    return json({ error: 'Only http and https links.' }, 400, cors);
+  /* Belt and braces: Workers can't reach private networks anyway, but no
+     reason to let this be pointed at loopback or link-local addresses. */
+  if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/i.test(u.hostname))
+    return json({ error: 'Not a public address.' }, 400, cors);
+
+  let html;
+  try {
+    const res = await fetch(u.toString(), {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MealPlanner/1.0; +https://jcruffino.github.io/meal-planner/)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-GB,en;q=0.9',
+      },
+      redirect: 'follow',
+      cf: { cacheTtl: 300, cacheEverything: true },
+    });
+    if (!res.ok) return json({ error: `That site returned ${res.status}.` }, 502, cors);
+    html = await res.text();
+  } catch {
+    return json({ error: "Couldn't reach that page." }, 502, cors);
+  }
+
+  const recipe = findRecipe(html);
+  if (!recipe) return json({ error: "That page doesn't publish recipe data." }, 404, cors);
+  return json(shape(recipe), 200, cors);
+}
+
+/* --- POST /ocr : read a screenshot --------------------------------------- */
+
+async function readScreenshot(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'POST an image to /ocr.' }, 405, cors);
+  if (!env || !env.AI)
+    return json({ error: 'This worker has no AI binding yet — add one in Settings, Bindings.' }, 500, cors);
+
+  const buf = await request.arrayBuffer();
+  if (!buf.byteLength) return json({ error: 'No image arrived.' }, 400, cors);
+  if (buf.byteLength > 4_000_000)
+    return json({ error: 'That image is too big. Under 4MB, please.' }, 413, cors);
+
+  let out;
+  try {
+    out = await env.AI.run(OCR_MODEL, {
+      image: [...new Uint8Array(buf)],
+      prompt: OCR_PROMPT,
+      max_tokens: 1500,
+    });
+  } catch (e) {
+    return json({ error: 'The reader failed: ' + (e.message || 'AI error') }, 502, cors);
+  }
+
+  const raw = (out && (out.response ?? out.description ?? out.text)) || '';
+  const parsed = looseJson(raw);
+  if (!parsed)
+    return json({ error: "Couldn't make sense of that screenshot.", raw: String(raw).slice(0, 300) }, 422, cors);
+
+  return json({
+    name: typeof parsed.name === 'string' ? clean(parsed.name) : '',
+    ingredients: list(parsed.ingredients),
+    method: list(parsed.method),
+  }, 200, cors);
+}
+
+/* Models like to wrap JSON in prose or code fences however firmly you ask. */
+function looseJson(s) {
+  const t = String(s).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(t); } catch { /* fall through */ }
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch { /* give up */ } }
+  return null;
+}
+
+/* --- shared -------------------------------------------------------------- */
 
 function json(obj, status, cors) {
   return new Response(JSON.stringify(obj), {
@@ -79,8 +153,6 @@ function json(obj, status, cors) {
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...cors },
   });
 }
-
-/* --- finding the recipe ------------------------------------------------- */
 
 function findRecipe(html) {
   /* Built fresh each call: a module-level /g regex keeps lastIndex between
@@ -107,8 +179,6 @@ function walk(node) {
   if (node['@graph']) return walk(node['@graph']);
   return null;
 }
-
-/* --- shaping it for the form -------------------------------------------- */
 
 function shape(r) {
   return {
@@ -141,7 +211,9 @@ function one(v) {
 
 function list(v) {
   if (!v) return [];
-  return (Array.isArray(v) ? v : [v]).map(clean).filter(Boolean);
+  return (Array.isArray(v) ? v : [v])
+    .map(x => (x && typeof x === 'object') ? clean(x.text || x.name || '') : clean(x))
+    .filter(Boolean);
 }
 
 /* recipeInstructions comes in at least four shapes: a single string (sometimes

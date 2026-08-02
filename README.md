@@ -139,6 +139,32 @@ browser. `{"error":"Not an allowed origin."}` is the *right* answer — a browse
 tab sends no Origin header, so the lock refuses it and only the app gets through.
 A Hello World greeting means the paste didn't save.
 
+### 7. Optional — reading a recipe out of a screenshot
+
+Instagram and the like publish no recipe data at all, and block server-side
+fetches anyway, so the link fetcher can't help there. Screenshot the caption
+instead and the app will read it.
+
+This uses Cloudflare's Workers AI, which is free — 10,000 neurons a day, no card
+— and runs on the worker you already deployed. It needs one binding:
+
+1. In the worker: **Settings → Bindings → Add → Workers AI**.
+2. Variable name **`AI`**, exactly that. Save.
+3. Redeploy the worker if it doesn't restart on its own.
+
+A **Choose a screenshot** button then appears under the link field. Pick a
+screenshot from your photos and it fills in the name, ingredients and method.
+On a computer you can paste an image straight into the form instead.
+
+Without the binding the button still appears but returns a message telling you
+it's missing. The image is scaled down in the browser before it's sent, so
+uploads stay quick.
+
+Read what comes back before saving. It transcribes what it can see and splits
+run-on ingredient lists into separate lines, but a blurry or cropped screenshot
+gives a patchy result — it fills in blank fields only, so it can never overwrite
+something you typed.
+
 A **Fetch** button then appears beside the recipe link field. Until you set it,
 the button stays hidden and everything works by pasting, as before.
 
