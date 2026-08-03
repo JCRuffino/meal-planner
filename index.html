@@ -148,6 +148,7 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 .tag.meat{color:var(--brick);border-color:#E2C7C1;background:#F8EFEC}
 .tag.vegetarian{color:var(--moss);border-color:#C6D6C8;background:#EDF3EC}
 .tag.vegan{color:var(--leaf);border-color:#C8DCBE;background:#EFF5EA}
+.tag.plain{color:var(--muted);border-color:var(--line);background:#F1F4F0}
 .fav{font-family:"DM Mono",monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ochre);border:1px solid #E6D2AE;background:#FAF3E5;padding:3px 7px;border-radius:5px}
 
 /* ---------- recipe list ---------- */
@@ -316,12 +317,17 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
         <button class="btn" id="addPlace">Add</button>
       </div>
       <div class="chips" id="placeChips"></div>
-      <div class="field" style="margin-bottom:14px">
-        <select id="placeSort" class="input">
-          <option value="stale">Sort by not been in a while</option>
-          <option value="rating">Sort by best</option>
-          <option value="spend">Sort by cheapest</option>
-          <option value="name">Sort by name</option>
+      <div class="row2" style="margin-bottom:12px">
+        <select id="placeCuisine" class="input" aria-label="Filter by cuisine"></select>
+        <select id="placePrice" class="input" aria-label="Filter by price"></select>
+      </div>
+      <div class="row2" style="margin-bottom:14px">
+        <select id="placeLocation" class="input" aria-label="Filter by location"></select>
+        <select id="placeSort" class="input" aria-label="Sort places">
+          <option value="stale">Not been in a while</option>
+          <option value="rating">Best first</option>
+          <option value="spend">Cheapest first</option>
+          <option value="name">Name</option>
         </select>
       </div>
       <div id="placeList" class="rlist"></div>
@@ -431,6 +437,7 @@ let searchTerm = '';
 let sortBy = 'cost';
 let placeFilter = 'all';
 let placeSort = 'stale';
+let placeCuisine = '', placePrice = '', placeLocation = '';   // '' means any
 let pickerMode = 'cook';     // which half of the day picker you're looking at
 let rolledUp = false;
 
@@ -1088,6 +1095,43 @@ function renderAddForm(){
 }
 
 /* ---------- places we eat out ---------- */
+const CUISINES = ['American','British','Brunch','Burgers','Chinese','French','Greek',
+  'Indian','Italian','Japanese','Korean','Mexican','Middle Eastern','Pizza','Pub food',
+  'Seafood','Spanish','Thai','Turkish','Vegetarian','Vietnamese','Other'];
+
+const PRICE_BANDS = [
+  { k:'cheap',     label:'Cheap' },
+  { k:'medium',    label:'Medium' },
+  { k:'expensive', label:'Expensive' },
+];
+const priceLabel = k => (PRICE_BANDS.find(b => b.k === k) || {}).label || '';
+
+/* Filter options come from what you've actually typed, so there are never
+   empty categories to scroll past. Case-insensitive de-dupe, because "Hove"
+   and "hove" are the same place. */
+function distinctValues(field){
+  const seen = new Map();
+  places.forEach(p => {
+    const raw = String(p[field] || '').trim();
+    if (!raw) return;
+    const key = raw.toLowerCase();
+    if (!seen.has(key)) seen.set(key, raw);
+  });
+  return [...seen.values()].sort((a,b) => a.localeCompare(b));
+}
+
+function fillFilter(el, anyLabel, values, current){
+  const html = [`<option value="">${esc(anyLabel)}</option>`].concat(
+    values.map(v => `<option value="${esc(v.k ?? v)}">${esc(v.label ?? v)}</option>`)).join('');
+  if (el.innerHTML !== html) el.innerHTML = html;   // don't churn an open dropdown
+  el.value = current;
+  if (el.value !== current) el.value = '';          // the value vanished from the data
+}
+
+function anyPlaceFilter(){
+  return placeFilter !== 'all' || placeCuisine || placePrice || placeLocation;
+}
+
 function buildPlaceChips(){
   const opts = [{k:'all',label:'All'},{k:'new',label:'Want to try'},{k:'been',label:'Been'}];
   $('#placeChips').innerHTML = opts.map(o =>
@@ -1098,6 +1142,12 @@ function buildPlaceChips(){
 
 function renderPlaces(){
   buildPlaceChips();
+  fillFilter($('#placeCuisine'),  'Any cuisine',  distinctValues('cuisine'),  placeCuisine);
+  fillFilter($('#placePrice'),    'Any price',    PRICE_BANDS,                placePrice);
+  fillFilter($('#placeLocation'), 'Anywhere',     distinctValues('location'), placeLocation);
+  placeCuisine = $('#placeCuisine').value;
+  placeLocation = $('#placeLocation').value;
+
   const host = $('#placeList');
   if (!places.length){
     host.innerHTML = `<div class="empty"><h3>Nowhere yet</h3>
@@ -1108,6 +1158,10 @@ function renderPlaces(){
   let list = places.slice();
   if (placeFilter === 'new')  list = list.filter(p => !p.lastVisited);
   if (placeFilter === 'been') list = list.filter(p => p.lastVisited);
+  if (placeCuisine)  list = list.filter(p => (p.cuisine || '') === placeCuisine);
+  if (placePrice)    list = list.filter(p => (p.price || '') === placePrice);
+  if (placeLocation) list = list.filter(p =>
+    String(p.location || '').trim().toLowerCase() === placeLocation.toLowerCase());
 
   const num = v => Number(v) || 0;
   list.sort({
@@ -1118,17 +1172,28 @@ function renderPlaces(){
   }[placeSort]);
 
   if (!list.length){
-    host.innerHTML = `<div class="empty"><h3>Nothing matches</h3><p>Try a different filter.</p></div>`;
+    host.innerHTML = `<div class="empty"><h3>Nothing matches</h3>
+      <p>No places fit all of those at once.</p>
+      <button class="btn btn-ghost" id="clearPlaceFilters">Show everything</button></div>`;
+    $('#clearPlaceFilters').onclick = () => {
+      placeFilter = 'all'; placeCuisine = placePrice = placeLocation = '';
+      renderPlaces();
+    };
     return;
   }
   host.innerHTML = list.map(p => {
+    const tags = [];
+    if (!p.lastVisited) tags.push(`<span class="fav">Want to try</span>`);
+    if (p.cuisine)  tags.push(`<span class="tag plain">${esc(p.cuisine)}</span>`);
+    if (p.price)    tags.push(`<span class="tag plain">${esc(priceLabel(p.price))}</span>`);
+    if (p.location) tags.push(`<span class="tag plain">${esc(p.location)}</span>`);
     const bits = [];
     if (Number(p.spend))  bits.push(`<span><b>${money(Number(p.spend))}</b> for two</span>`);
     if (Number(p.rating)) bits.push(`<span>rated <b>${Number(p.rating)}</b>/5</span>`);
     bits.push(`<span>${esc(agoLabel(p.lastVisited, PLACE_WORDS))}</span>`);
     return `<button class="ritem" data-id="${p.id}">
       <h3>${esc(p.name || 'Untitled')}</h3>
-      ${!p.lastVisited ? `<div class="rtags"><span class="fav">Want to try</span></div>` : ''}
+      ${tags.length ? `<div class="rtags">${tags.join('')}</div>` : ''}
       <div class="rdata">${bits.join('<span class="sep">·</span>')}</div>
     </button>`;
   }).join('');
@@ -1143,8 +1208,25 @@ function placeFormHtml(p, prefix){
   <div class="field"><label for="${prefix}-url">Website</label>
     <input id="${prefix}-url" class="input p-url" type="url" inputmode="url" value="${esc(p.url||'')}" placeholder="https://"></div>
 
-  <div class="field"><label for="${prefix}-spend">Typical spend for the two of you</label>
-    <input id="${prefix}-spend" class="input p-spend" type="number" inputmode="decimal" step="1" min="0" value="${esc(p.spend ?? '')}" placeholder="60"></div>
+  <div class="row2">
+    <div class="field"><label for="${prefix}-loc">Where it is</label>
+      <input id="${prefix}-loc" class="input p-loc" value="${esc(p.location||'')}" placeholder="Hove" autocomplete="off"></div>
+    <div class="field"><label for="${prefix}-cuisine">Cuisine</label>
+      <select id="${prefix}-cuisine" class="input p-cuisine">
+        <option value="">Not set</option>
+        ${CUISINES.map(c => `<option value="${esc(c)}"${p.cuisine===c?' selected':''}>${esc(c)}</option>`).join('')}
+      </select></div>
+  </div>
+
+  <div class="row2">
+    <div class="field"><label for="${prefix}-price">Price bracket</label>
+      <select id="${prefix}-price" class="input p-price">
+        <option value="">Not set</option>
+        ${PRICE_BANDS.map(b => `<option value="${b.k}"${p.price===b.k?' selected':''}>${esc(b.label)}</option>`).join('')}
+      </select></div>
+    <div class="field"><label for="${prefix}-spend">Spent last time</label>
+      <input id="${prefix}-spend" class="input p-spend" type="number" inputmode="decimal" step="1" min="0" value="${esc(p.spend ?? '')}" placeholder="60"></div>
+  </div>
 
   <div class="field"><label>How much you liked it &mdash; 5 is best</label>${segHtml('rating', p.rating)}</div>
   `;
@@ -1156,6 +1238,9 @@ function readPlaceForm(root){
   return {
     name: v('p-name').trim(),
     url: v('p-url').trim(),
+    location: v('p-loc').trim(),
+    cuisine: v('p-cuisine'),
+    price: v('p-price'),
     spend: v('p-spend') === '' ? null : Number(v('p-spend')),
     rating: picked ? Number(picked.dataset.v) : null,
   };
@@ -1205,7 +1290,8 @@ $('#addPlace').onclick = async () => {
   const name = input.value.trim();
   if (!name){ input.focus(); return; }
   const ok = await guard(() => addDoc(placesCol, {
-    name, url:'', spend:null, rating:null, lastVisited:null, createdAt: serverTimestamp(),
+    name, url:'', location:'', cuisine:'', price:'',
+    spend:null, rating:null, lastVisited:null, createdAt: serverTimestamp(),
   }), 'Place added');
   if (ok){ input.value = ''; input.focus(); }
 };
@@ -1213,6 +1299,9 @@ $('#newPlace').addEventListener('keydown', e => {
   if (e.key === 'Enter'){ e.preventDefault(); $('#addPlace').click(); }
 });
 $('#placeSort').addEventListener('change', e => { placeSort = e.target.value; renderPlaces(); });
+$('#placeCuisine').addEventListener('change',  e => { placeCuisine  = e.target.value; renderPlaces(); });
+$('#placePrice').addEventListener('change',    e => { placePrice    = e.target.value; renderPlaces(); });
+$('#placeLocation').addEventListener('change', e => { placeLocation = e.target.value; renderPlaces(); });
 
 /* ---------- sheet ---------- */
 const FOCUSABLE = 'button, a[href], input, select, textarea';
