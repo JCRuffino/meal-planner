@@ -382,7 +382,8 @@ textarea.input{min-height:150px;resize:vertical;line-height:1.5;font-family:"DM 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-         onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+         getRedirectResult, setPersistence, indexedDBLocalPersistence,
+         browserLocalPersistence, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
          onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -401,6 +402,18 @@ const FETCHER = (CFG.recipeFetcher || '').trim();   // '' hides the Fetch button
 const app = initializeApp(CFG.firebase);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+/* Stay signed in. Local persistence is meant to be the default, but say so
+   explicitly rather than trusting it — if the SDK can't reach its preferred
+   store it quietly falls back to in-memory, which logs you out on every
+   reload. IndexedDB first, localStorage second, since Safari treats them
+   differently under its storage limits. */
+const persistenceReady = setPersistence(auth, indexedDBLocalPersistence)
+  .catch(() => setPersistence(auth, browserLocalPersistence))
+  .catch(() => {});
+
+/* Completes a redirect sign-in when we come back from Google. */
+persistenceReady.then(() => getRedirectResult(auth).catch(() => {}));
 
 const recipesCol = collection(db, 'spaces', SPACE, 'recipes');
 const placesCol  = collection(db, 'spaces', SPACE, 'places');
@@ -517,6 +530,7 @@ const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
 
 $('#signInBtn').addEventListener('click', async () => {
+  await persistenceReady;          // don't sign in before the store is chosen
   try { await signInWithPopup(auth, provider); }
   catch (e) {
     if (String(e.code).includes('popup')) { await signInWithRedirect(auth, provider); }
